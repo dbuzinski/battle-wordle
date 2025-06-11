@@ -35,6 +35,10 @@
   let letterStatuses = {};
   let playerIds = [];
 
+  // Add new state for invalid guess
+  let isInvalidGuess = false;
+  let invalidGuessTimeout;
+
   // Cookie management
   function setCookie(name, value) {
     document.cookie = `${name}=${value};path=/`;
@@ -55,6 +59,14 @@
     messageTimeout = window.setTimeout(() => {
       showMessage = false;
     }, 3000);
+  }
+
+  function showInvalidGuess() {
+    isInvalidGuess = true;
+    if (invalidGuessTimeout) clearTimeout(invalidGuessTimeout);
+    invalidGuessTimeout = window.setTimeout(() => {
+      isInvalidGuess = false;
+    }, 600); // Match the animation duration
   }
 
   function createNewGame() {
@@ -250,6 +262,7 @@
 
     if (!allowedGuesses.includes(guess)) {
       showMessageTemporarily("Not in word list");
+      showInvalidGuess();
       return false;
     }
     
@@ -263,6 +276,7 @@
           const correctLetter = prevGuess[i].toUpperCase();
           if (guessArray[i].toUpperCase() !== correctLetter) {
             showMessageTemporarily(`Letter ${correctLetter} must be in position ${i + 1}`);
+            showInvalidGuess();
             return false;
           }
         }
@@ -279,6 +293,7 @@
         
         if (prevGuess[i].toUpperCase() === letter && prevStatuses[i] === 'present') {
           showMessageTemporarily(`Cannot use letter ${letter} in position ${i + 1}`);
+          showInvalidGuess();
           return false;
         }
       }
@@ -302,6 +317,7 @@
     for (const requiredLetter of requiredLetters) {
       if (!usedLetters.has(requiredLetter)) {
         showMessageTemporarily(`Must use letter ${requiredLetter}`);
+        showInvalidGuess();
         return false;
       }
     }
@@ -311,6 +327,7 @@
       const letter = guessArray[i].toUpperCase();
       if (letterStatuses[letter] === 'absent') {
         showMessageTemporarily(`Cannot use letter ${letter}`);
+        showInvalidGuess();
         return false;
       }
     }
@@ -459,6 +476,7 @@
           class="tile"
           class:flipped={statuses[i]?.[j]}
           class:current-row={i === currentGuessIndex}
+          class:shake={isInvalidGuess && i === currentGuessIndex}
           style="--tile-color: {getTileColor(i, j)}; --row-index: {i}; --col-index: {j}"
         >
           {letter.toUpperCase()}
@@ -787,5 +805,27 @@
     gap: 5px;
     margin: 2rem 0;
     perspective: 1000px;
+  }
+
+  /* Add shake animation for invalid guesses */
+  @keyframes shake {
+    0%, 100% {
+      transform: translateX(0);
+    }
+    10%, 30%, 50%, 70%, 90% {
+      transform: translateX(-4px);
+    }
+    20%, 40%, 60%, 80% {
+      transform: translateX(4px);
+    }
+  }
+
+  .tile.shake {
+    animation: shake 0.6s cubic-bezier(.36,.07,.19,.97) both;
+  }
+
+  /* Ensure shake animation doesn't interfere with flip */
+  .tile.shake.flipped {
+    animation: shake 0.6s cubic-bezier(.36,.07,.19,.97) both, flipTile 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
 </style>
