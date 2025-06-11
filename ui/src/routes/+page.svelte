@@ -40,6 +40,7 @@
   let letterStatuses = {};
   let revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
   let shakingRow = -1;
+  let playerIds: string[] = [];
 
   // Cookie management
   function setCookie(name: string, value: string) {
@@ -124,11 +125,12 @@
           isGameOver: msg.gameOver,
           solution: msg.solution ? 'present' : 'missing',
           guesses: msg.guesses,
-          isSpectator: msg.isSpectator
+          players: msg.players
         });
 
         // Update game state
-        isSpectator = msg.isSpectator;
+        playerIds = msg.players || [];
+        isSpectator = !playerIds.includes(playerId);
         isMyTurn = !isSpectator && msg.currentPlayer === playerId;
         isGameOver = msg.gameOver || false;
         
@@ -151,12 +153,12 @@
         }
         
         // Update turn status message
-        if (!isGameOver) {
-          if (isSpectator) {
-            turnStatusMessage = "You are spectating this game";
-          } else {
-            turnStatusMessage = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
-          }
+        if (isGameOver) {
+          turnStatusMessage = '';
+        } else if (isSpectator) {
+          turnStatusMessage = "You are spectating this game";
+        } else {
+          turnStatusMessage = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
         }
       } else if (msg.type === 'game_over') {
         console.log('Game over message received:', msg);
@@ -486,6 +488,10 @@
       </div>
     {/each}
   </div>
+
+  <div class="game-controls">
+    <button class="new-game-btn" on:click={startNewGame}>New Game</button>
+  </div>
 </div>
 
 <style>
@@ -604,14 +610,14 @@
   }
 
   .new-game-btn {
-    margin-top: 1rem;
-    padding: 0.5rem 1rem;
+    padding: 0.75rem 1.5rem;
     background-color: #4CAF50;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 1rem;
+    font-size: 1.1rem;
+    transition: background-color 0.2s ease;
   }
 
   .new-game-btn:hover {
@@ -631,5 +637,11 @@
   .turn-status.spectator {
     background-color: rgba(255, 255, 255, 0.2);
     font-style: italic;
+  }
+
+  .game-controls {
+    display: flex;
+    justify-content: center;
+    margin: 2rem 0;
   }
 </style>
