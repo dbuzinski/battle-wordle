@@ -19,13 +19,14 @@
   let gameId: string;
   let socket: WebSocket;
   let playerId: string;
-  let playerName: string = '';
   let isJoining: boolean = false;
   let showMessage: boolean = false;
   let message: string = '';
+  let turnStatusMessage: string = '';
   let messageTimeout: number;
   let isMyTurn: boolean = false;
   let isGameOver: boolean = false;
+  let isSpectator: boolean = false;
   let gameResult: 'won' | 'lost' | null = null;
   let allGuesses: string[] = [];
   let statuses: string[][] = [];
@@ -108,8 +109,7 @@
       console.log('WebSocket connected');
       socket.send(JSON.stringify({
         type: 'join',
-        from: playerId,
-        name: playerName
+        from: playerId
       }));
     };
 
@@ -123,11 +123,13 @@
           playerId: playerId,
           isGameOver: msg.gameOver,
           solution: msg.solution ? 'present' : 'missing',
-          guesses: msg.guesses
+          guesses: msg.guesses,
+          isSpectator: msg.isSpectator
         });
 
         // Update game state
-        isMyTurn = msg.currentPlayer === playerId;
+        isSpectator = msg.isSpectator;
+        isMyTurn = !isSpectator && msg.currentPlayer === playerId;
         isGameOver = msg.gameOver || false;
         
         if (msg.solution) {
@@ -148,10 +150,13 @@
           updateBoard();
         }
         
-        // Show appropriate message based on game state
+        // Update turn status message
         if (!isGameOver) {
-          message = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
-          showMessageTemporarily(message);
+          if (isSpectator) {
+            turnStatusMessage = "You are spectating this game";
+          } else {
+            turnStatusMessage = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
+          }
         }
       } else if (msg.type === 'game_over') {
         console.log('Game over message received:', msg);
@@ -169,6 +174,7 @@
           message = `You won! Your opponent guessed the word "${msg.solution}"!`;
         }
         showMessage = true;
+        turnStatusMessage = ''; // Clear turn status when game is over
       }
     };
 
@@ -317,8 +323,8 @@
   // Input handling
   function handleKey(e) {
     // Only handle keyboard input if it's your turn and the game isn't over
-    if (isGameOver) {
-      console.log('Game is over');
+    if (isGameOver || isSpectator) {
+      console.log('Game is over or you are a spectator');
       return;
     }
 
@@ -372,18 +378,14 @@
         setCookie('playerId', playerId);
       }
 
-      // Get or create player name - also persistent
-      playerName = getCookie('playerName') || '';
-      if (!playerName) {
-        playerName = prompt('Enter your name:') || 'Player';
-        setCookie('playerName', playerName);
-      }
-
       // Get game ID from URL - this is specific to the current game
       gameId = $page.url.searchParams.get('game');
       if (gameId) {
         // If we have a game ID, connect to that game
         initializeWebSocket();
+      } else {
+        // If no game ID, create a new game
+        createNewGame();
       }
     }
   });
@@ -408,11 +410,6 @@
   }
 
   function handleJoin() {
-    if (!playerName.trim()) {
-      showMessageTemporarily('Please enter your name');
-      return;
-    }
-    
     if (!gameId) {
       createNewGame();
     }
@@ -420,8 +417,7 @@
     isJoining = true;
     socket.send(JSON.stringify({
       type: 'join',
-      from: playerId,
-      name: playerName
+      from: playerId
     }));
   }
 </script>
@@ -429,74 +425,67 @@
 <svelte:window on:keydown={handleKey} />
 
 <div class="container">
-  {#if !gameId}
-    <div class="join-form">
-      <h1>Battle Wordle</h1>
-      <input
-        type="text"
-        bind:value={playerName}
-        placeholder="Enter your name"
-        on:keydown={(e) => e.key === 'Enter' && handleJoin()}
-      />
-      <button on:click={handleJoin}>New Game</button>
-    </div>
-  {:else}
-    <h1 style="text-align: center; color: white;">Battle Wordle!</h1>
-    <h2 style="text-align: center; color: white; font-size: 1.2em;">Try to avoid guessing the word!</h2>
+  <h1 style="text-align: center; color: white;">Battle Wordle!</h1>
+  <h2 style="text-align: center; color: white; font-size: 1.2em;">Try to avoid guessing the word!</h2>
 
-    {#if showMessage}
-      <div class="message" class:error={message.includes('error')} class:success={message.includes('won')}>
-        {message}
-      </div>
-    {/if}
-
-    {#if isGameOver}
-      <div class="game-over">
-        <h2>{message}</h2>
-        <button class="new-game-btn" on:click={startNewGame}>Start New Game</button>
-      </div>
-    {/if}
-
-    <div class="grid" style="display: grid; justify-content: center; grid-template-columns: repeat(5, 50px); gap: 5px;">
-      {#each guesses as guess, i}
-        {#each guess as letter, j}
-          <div
-            class="tile {flippingRow === i ? 'flipping' : ''} {revealedTiles[i][j] ? 'revealed' : ''} {shakingRow === i ? 'shake' : ''} {statuses[i]?.[j] || ''}"
-            style="--flip-bg-before: #121213; --flip-bg-after: {getTileColor(i, j)}; animation-delay: {flippingRow === i ? j * 0.15 : 0}s;"
-          >
-            {letter.toUpperCase()}
-          </div>
-        {/each}
-      {/each}
-    </div>
-
-    <div class="keyboard">
-      {#each KEYBOARD_ROWS as row}
-        <div class="kb-row">
-          {#each row as key}
-            {#if key === 'enter' || key === 'backspace'}
-              <button 
-                class="kb-key" 
-                on:click={() => handleKeyPress(key)}
-              >
-                {key === 'enter' ? 'Enter' : '⌫'}
-              </button>
-            {:else}
-              <button 
-                class="kb-key" 
-                class:correct={letterStatuses[key.toUpperCase()] === 'correct'}
-                class:present={letterStatuses[key.toUpperCase()] === 'present'}
-                class:absent={letterStatuses[key.toUpperCase()] === 'absent'}
-                on:click={() => handleKeyPress(key)}
-              >
-                {key.toUpperCase()}
-              </button>
-            {/if}
-          {/each}
-        </div>
-      {/each}
+  {#if turnStatusMessage}
+    <div class="turn-status" class:spectator={isSpectator}>
+      {turnStatusMessage}
     </div>
   {/if}
+
+  {#if showMessage}
+    <div class="message" class:error={message.includes('error')} class:success={message.includes('won')}>
+      {message}
+    </div>
+  {/if}
+
+  {#if isGameOver}
+    <div class="game-over">
+      <h2>{message}</h2>
+      <button class="new-game-btn" on:click={startNewGame}>Start New Game</button>
+    </div>
+  {/if}
+
+  <div class="grid" style="display: grid; justify-content: center; grid-template-columns: repeat(5, 50px); gap: 5px;">
+    {#each guesses as guess, i}
+      {#each guess as letter, j}
+        <div
+          class="tile {flippingRow === i ? 'flipping' : ''} {revealedTiles[i][j] ? 'revealed' : ''} {shakingRow === i ? 'shake' : ''} {statuses[i]?.[j] || ''}"
+          style="--flip-bg-before: #121213; --flip-bg-after: {getTileColor(i, j)}; animation-delay: {flippingRow === i ? j * 0.15 : 0}s;"
+        >
+          {letter.toUpperCase()}
+        </div>
+      {/each}
+    {/each}
+  </div>
+
+  <div class="keyboard">
+    {#each KEYBOARD_ROWS as row}
+      <div class="kb-row">
+        {#each row as key}
+          {#if key === 'enter' || key === 'backspace'}
+            <button 
+              class="kb-key" 
+              on:click={() => handleKeyPress(key)}
+            >
+              {key === 'enter' ? 'Enter' : '⌫'}
+            </button>
+          {:else}
+            <button 
+              class="kb-key" 
+              class:correct={letterStatuses[key.toUpperCase()] === 'correct'}
+              class:present={letterStatuses[key.toUpperCase()] === 'present'}
+              class:absent={letterStatuses[key.toUpperCase()] === 'absent'}
+              on:click={() => handleKeyPress(key)}
+            >
+              {key.toUpperCase()}
+            </button>
+          {/if}
+        {/each}
+      </div>
+    {/each}
+  </div>
 </div>
 
 <style>
@@ -627,5 +616,20 @@
 
   .new-game-btn:hover {
     background-color: #45a049;
+  }
+
+  .turn-status {
+    text-align: center;
+    color: white;
+    font-size: 1.2em;
+    margin: 1rem 0;
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+  }
+
+  .turn-status.spectator {
+    background-color: rgba(255, 255, 255, 0.2);
+    font-style: italic;
   }
 </style>

@@ -35,6 +35,7 @@ type Game struct {
 	Solution      string
 	CurrentPlayer string
 	Players       map[string]*Player
+	Spectators    map[string]*Player
 	Guesses       []string
 	GameOver      bool
 	LoserId       string
@@ -44,20 +45,19 @@ type Game struct {
 // Player information
 type Player struct {
 	Conn *websocket.Conn
-	Name string
 }
 
 // Message structure
 type Message struct {
 	Type         string   `json:"type"`
 	From         string   `json:"from"`
-	Name         string   `json:"name"`
 	Guess        string   `json:"guess"`
 	Solution     string   `json:"solution"`
 	Guesses      []string `json:"guesses"`
 	CurrentPlayer string  `json:"currentPlayer"`
 	GameOver     bool     `json:"gameOver"`
 	LoserId      string   `json:"loserId"`
+	IsSpectator  bool     `json:"isSpectator"`
 }
 
 // WebSocket connection
@@ -127,7 +127,7 @@ func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		switch msg.Type {
 		case JOIN_MSG:
-			s.handleJoin(game, msg.From, msg.Name, conn)
+			s.handleJoin(game, msg.From, conn)
 		case GUESS_MSG:
 			s.handleGuess(game, msg.From, msg.Guess)
 		}
@@ -199,33 +199,41 @@ func (s *GameServer) handleMessage(msg Message) {
 
 	switch msg.Type {
 	case JOIN_MSG:
-		s.handleJoin(game, msg.From, msg.Name, nil) // Note: conn will be nil here
+		s.handleJoin(game, msg.From, nil) // Note: conn will be nil here
 	case GUESS_MSG:
 		s.handleGuess(game, msg.From, msg.Guess)
 	}
 }
 
 // Handle player join
-func (s *GameServer) handleJoin(game *Game, playerId string, name string, conn *websocket.Conn) {
+func (s *GameServer) handleJoin(game *Game, playerId string, conn *websocket.Conn) {
 	game.mutex.Lock()
 	defer game.mutex.Unlock()
 
-	log.Printf("Player %s (%s) attempting to join", name, playerId)
+	log.Printf("Player %s attempting to join", playerId)
 	log.Printf("Current state before join - CurrentPlayer: %s, Players: %v", game.CurrentPlayer, game.Players)
 
-	// Add or update player
-	game.Players[playerId] = &Player{
-		Conn: conn,
-		Name: name,
-	}
+	// Check if this is a spectator
+	isSpectator := len(game.Players) >= 2
 
-	if game.CurrentPlayer == "" {
-		game.CurrentPlayer = playerId
-		log.Printf("First player %s set as current player", playerId)
+	// Add or update player
+	if isSpectator {
+		game.Spectators[playerId] = &Player{
+			Conn: conn,
+		}
+		log.Printf("Player %s joined as spectator", playerId)
+	} else {
+		game.Players[playerId] = &Player{
+			Conn: conn,
+		}
+		if game.CurrentPlayer == "" {
+			game.CurrentPlayer = playerId
+			log.Printf("First player %s set as current player", playerId)
+		}
 	}
 
 	// Send current game state to the joining player
-	s.sendGameState(game, playerId)
+	s.sendGameState(game, playerId, isSpectator)
 
 	// If this is the second player, broadcast the updated game state to all players
 	if len(game.Players) == 2 {
@@ -379,6 +387,7 @@ func (s *GameServer) getOrCreateGame(gameId string) *Game {
 		game = &Game{
 			Solution:      getRandomWord(),
 			Players:       make(map[string]*Player),
+			Spectators:    make(map[string]*Player),
 			Guesses:       make([]string, 0),
 			GameOver:      false,
 		}
@@ -388,13 +397,14 @@ func (s *GameServer) getOrCreateGame(gameId string) *Game {
 	return game
 }
 
-func (s *GameServer) sendGameState(game *Game, playerId string) {
+func (s *GameServer) sendGameState(game *Game, playerId string, isSpectator bool) {
 	msg := Message{
 		Type:         GAME_STATE,
 		CurrentPlayer: game.CurrentPlayer,
 		Solution:     game.Solution,
 		Guesses:      game.Guesses,
 		GameOver:     game.GameOver,
+		IsSpectator:  isSpectator,
 	}
 
 	data, err := json.Marshal(msg)
@@ -403,7 +413,14 @@ func (s *GameServer) sendGameState(game *Game, playerId string) {
 		return
 	}
 
-	if err := game.Players[playerId].Conn.WriteMessage(websocket.TextMessage, data); err != nil {
+	var conn *websocket.Conn
+	if isSpectator {
+		conn = game.Spectators[playerId].Conn
+	} else {
+		conn = game.Players[playerId].Conn
+	}
+
+	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		log.Printf("Error sending game state to player %s: %v", playerId, err)
 	}
 }
@@ -423,9 +440,17 @@ func (s *GameServer) broadcastGameState(game *Game) {
 		return
 	}
 
+	// Broadcast to players
 	for id, player := range game.Players {
 		if err := player.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Printf("Error broadcasting game state to player %s: %v", id, err)
+		}
+	}
+
+	// Broadcast to spectators
+	for id, spectator := range game.Spectators {
+		if err := spectator.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("Error broadcasting game state to spectator %s: %v", id, err)
 		}
 	}
 }
