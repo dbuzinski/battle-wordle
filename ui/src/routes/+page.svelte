@@ -1,7 +1,40 @@
 <script>
   import { onMount } from 'svelte';
 
+  // Constants
+  const MAX_GUESSES = 6;
+  const WORD_LENGTH = 5;
+  const KEYBOARD_ROWS = [
+    ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+    ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+    ['enter', 'z', 'x', 'c', 'v', 'b', 'n', 'm', 'backspace']
+  ];
 
+  // Game state
+  let socket;
+  let playerId;
+  let playerName;
+  let isMyTurn = false;
+  let solution = '';
+  let gameStarted = false;
+  let guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
+  let statuses = Array(MAX_GUESSES).fill(null);
+  let currentGuessIndex = 0;
+  let currentLetterIndex = 0;
+  let flippingRow = -1;
+  let shakingRow = -1;
+  let isGameOver = false;
+  let gameResult = '';
+  let allGuesses = [];
+  let letterStatuses = {};
+  let revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
+
+  // UI state
+  let message = '';
+  let messageTimeout;
+  let showMessage = false;
+
+  // Cookie management
   function setCookie(name, value, days = 30) {
     const expires = new Date(Date.now() + days * 86400000).toUTCString();
     document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
@@ -13,150 +46,22 @@
     if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
   }
 
-  let socket;
-  let playerId;
-  let playerName;
-  let isMyTurn = false;
-  let solution = '';
-  let opponentGuess = null;
-  let gameStarted = false;
-  let allGuesses = [];
-
-  let currentPlayerId = '';
-  const maxGuesses = 6;
-  const wordLength = 5;
-
-  let guesses = Array(maxGuesses).fill(null).map(() => Array(wordLength).fill(''));
-  let statuses = Array(maxGuesses).fill(null);
-  let currentGuessIndex = 0;
-  let currentLetterIndex = 0;
-  let flippingRow = -1;
-  let shakingRow = -1;
-  let gameOver = false;
-  let previousGuesses = [];
-  let letterStatuses = {};
-
-  let revealedTiles = Array(maxGuesses).fill(null).map(() => Array(wordLength).fill(false));
-
-  let message = '';
-  let messageTimeout;
-  let isGameOver = false;
-  let gameResult = ''; // 'won' or 'lost'
-  let showMessage = false;
-
-  const rows = [
-    ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
-    ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
-    ['enter', 'z', 'x', 'c', 'v', 'b', 'n', 'm', 'backspace']
-  ];
-
-  onMount(() => {
-    playerId = getCookie("playerId");
-    playerName = getCookie("playerName");
-
-    if (!playerId) {
-      playerId = crypto.randomUUID();
-      setCookie("playerId", playerId);
-    }
-
-    if (!playerName) {
-      playerName = prompt("Enter your name") || "Anonymous";
-      setCookie("playerName", playerName);
-    }
-
-    socket = new WebSocket('ws://localhost:8080/ws');
-
-    socket.onopen = () => {
-      console.log('WebSocket connected');
-      socket.send(JSON.stringify({
-        type: 'join',
-        from: playerId,
-        name: playerName
-      }));
-    };
-
-    socket.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      console.log('Received message:', msg);
-      
-      if (msg.type === 'game_state') {
-        console.log('Processing game state update');
-        isMyTurn = msg.currentPlayer === playerId;
-        gameStarted = msg.gameStarted;
-        currentPlayerId = msg.currentPlayer;
-        
-        // Update solution if provided
-        if (msg.solution) {
-          console.log('Updating solution:', msg.solution);
-          solution = msg.solution;
-        }
-        
-        // Update guesses
-        if (msg.guesses) {
-          console.log('Updating guesses:', msg.guesses);
-          const oldGuessCount = allGuesses.length;
-          allGuesses = msg.guesses;
-          
-          // If there's a new guess, trigger the animation
-          if (allGuesses.length > oldGuessCount) {
-            flippingRow = oldGuessCount;
-            setTimeout(() => {
-              flippingRow = -1;
-            }, 1050);
-          }
-          
-          updateBoard();
-        }
-        
-        if (gameStarted) {
-          message = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
-        } else {
-          message = "Waiting for opponent to join...";
-        }
-      } else if (msg.type === 'game_over') {
-        console.log('Processing game over');
-        isGameOver = true;
-        gameOver = true;
-        solution = msg.solution;
-        allGuesses = msg.guesses || [];
-        
-        updateBoard();
-        
-        if (msg.loserId === playerId) {
-          gameResult = 'lost';
-          message = `You lost! You guessed the word "${msg.solution}"!`;
-        } else {
-          gameResult = 'won';
-          message = `You won! Your opponent guessed the word "${msg.solution}"!`;
-        }
-        showMessage = true;
-      }
-    };
-
-    socket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-
-    socket.onclose = () => {
-      console.log('WebSocket connection closed');
-    };
-  });
-
-  $: if (message) {
+  // Message handling
+  function showMessageTemporarily(msg) {
+    message = msg;
     showMessage = true;
-    const isTemporary = !gameOver && !message.toLowerCase().includes('win') && !message.toLowerCase().includes('game over');
-    if (isTemporary) {
-      setTimeout(() => {
+    if (messageTimeout) clearTimeout(messageTimeout);
+    messageTimeout = setTimeout(() => {
+      if (!isGameOver) {
         showMessage = false;
-        message = '';
-      }, 1000);
-    }
+      }
+    }, 2000);
   }
 
+  // Game logic
   function getGuessStatuses(guess, solution) {
     if (!solution) return Array(guess.length).fill('absent');
     
-    console.log('Getting statuses for guess:', guess, 'against solution:', solution);
     const statuses = Array(guess.length).fill('absent');
     const solutionChars = solution.split('');
     const taken = Array(guess.length).fill(false);
@@ -166,7 +71,6 @@
       if (guess[i].toUpperCase() === solution[i]) {
         statuses[i] = 'correct';
         taken[i] = true;
-        console.log(`Letter ${guess[i]} at position ${i} is correct`);
       }
     }
 
@@ -177,43 +81,36 @@
       if (idx !== -1) {
         statuses[i] = 'present';
         taken[idx] = true;
-        console.log(`Letter ${guess[i]} at position ${i} is present`);
       }
     }
 
-    console.log('Final statuses:', statuses);
     return statuses;
   }
 
   function updateBoard() {
-    console.log('Updating board with solution:', solution, 'and guesses:', allGuesses);
-    
     // Reset the board
-    guesses = Array(maxGuesses).fill(null).map(() => Array(wordLength).fill(''));
-    statuses = Array(maxGuesses).fill(null);
-    revealedTiles = Array(maxGuesses).fill(null).map(() => Array(wordLength).fill(false));
+    guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
+    statuses = Array(MAX_GUESSES).fill(null);
+    revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
     letterStatuses = {};
     
     // Update the board with all guesses
     allGuesses.forEach((guess, index) => {
-      if (index < maxGuesses) {
+      if (index < MAX_GUESSES) {
         guesses[index] = guess.split('');
         const guessStatuses = getGuessStatuses(guess, solution);
         statuses[index] = guessStatuses;
-        revealedTiles[index] = Array(wordLength).fill(true);
+        revealedTiles[index] = Array(WORD_LENGTH).fill(true);
         
         // Update letter statuses
         guessStatuses.forEach((status, i) => {
           const letter = guess[i].toUpperCase();
           const currentStatus = letterStatuses[letter];
-          const newStatus = mergeStatus(currentStatus, status);
-          letterStatuses[letter] = newStatus;
-          console.log(`Letter ${letter} status updated: ${currentStatus} -> ${newStatus}`);
+          letterStatuses[letter] = mergeStatus(currentStatus, status);
         });
       }
     });
     
-    console.log('Final letter statuses:', letterStatuses);
     currentGuessIndex = allGuesses.length;
     currentLetterIndex = 0;
   }
@@ -252,7 +149,7 @@
       }
     }
     
-    // Then collect all required letters (correct and present)
+    // Collect all required letters (correct and present)
     const requiredLetters = new Set();
     for (let prevGuessIndex = 0; prevGuessIndex < allGuesses.length; prevGuessIndex++) {
       const prevGuess = allGuesses[prevGuessIndex];
@@ -277,8 +174,6 @@
     // Check each letter against previous guesses
     for (let i = 0; i < guessArray.length; i++) {
       const letter = guessArray[i].toUpperCase();
-      
-      // Check if this letter was previously marked as absent
       if (letterStatuses[letter] === 'absent') {
         message = `Cannot use letter ${letter} - it's not in the word`;
         return false;
@@ -288,17 +183,15 @@
     return true;
   }
 
-  function showMessageTemporarily(msg) {
-    message = msg;
-    showMessage = true;
-    if (messageTimeout) clearTimeout(messageTimeout);
-    messageTimeout = setTimeout(() => {
-      if (!isGameOver) {  // Only hide if not game over
-        showMessage = false;
-      }
-    }, 2000);
+  function mergeStatus(current, newStatus) {
+    if (!current) return newStatus;
+    if (current === 'correct') return 'correct';
+    if (current === 'present' && newStatus === 'correct') return 'correct';
+    if (current === 'absent' && (newStatus === 'present' || newStatus === 'correct')) return newStatus;
+    return current;
   }
 
+  // Input handling
   async function submitGuess() {
     if (!isMyTurn || isGameOver) {
       console.log('Cannot submit guess: not your turn or game is over');
@@ -306,22 +199,15 @@
     }
     
     const guess = guesses[currentGuessIndex].join('');
-    if (guess.length !== wordLength) {
+    if (guess.length !== WORD_LENGTH) {
       showMessageTemporarily('Not enough letters');
       return;
     }
 
-    // Validate the guess against previous guesses
     if (!validateGuess(guess)) {
       showMessageTemporarily(message);
       return;
     }
-
-    console.log('Sending guess:', {
-      type: 'guess',
-      from: playerId,
-      guess: guess
-    });
     
     socket.send(JSON.stringify({
       type: 'guess',
@@ -346,7 +232,7 @@
         guesses[currentGuessIndex][currentLetterIndex] = '';
       }
     } else if (/^[a-z]$/.test(key)) {
-      if (currentLetterIndex < wordLength) {
+      if (currentLetterIndex < WORD_LENGTH) {
         guesses[currentGuessIndex][currentLetterIndex] = key;
         currentLetterIndex++;
       }
@@ -357,6 +243,99 @@
     handleKey({ key });
   }
 
+  // WebSocket handling
+  onMount(() => {
+    playerId = getCookie("playerId");
+    playerName = getCookie("playerName");
+
+    if (!playerId) {
+      playerId = crypto.randomUUID();
+      setCookie("playerId", playerId);
+    }
+
+    if (!playerName) {
+      playerName = prompt("Enter your name") || "Anonymous";
+      setCookie("playerName", playerName);
+    }
+
+    socket = new WebSocket('ws://localhost:8080/ws');
+
+    socket.onopen = () => {
+      console.log('WebSocket connected');
+      socket.send(JSON.stringify({
+        type: 'join',
+        from: playerId,
+        name: playerName
+      }));
+    };
+
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      console.log('Received message:', msg);
+      
+      if (msg.type === 'game_state') {
+        // Don't update game state if the game is over
+        if (isGameOver) {
+          return;
+        }
+
+        isMyTurn = msg.currentPlayer === playerId;
+        gameStarted = msg.gameStarted;
+        
+        if (msg.solution) {
+          solution = msg.solution;
+        }
+        
+        if (msg.guesses) {
+          const oldGuessCount = allGuesses.length;
+          allGuesses = msg.guesses;
+          
+          if (allGuesses.length > oldGuessCount) {
+            flippingRow = oldGuessCount;
+            setTimeout(() => {
+              flippingRow = -1;
+            }, 1050);
+          }
+          
+          updateBoard();
+        }
+        
+        if (gameStarted && !isGameOver) {
+          message = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
+          showMessageTemporarily(message);
+        } else if (!gameStarted) {
+          message = "Waiting for opponent to join...";
+          showMessageTemporarily(message);
+        }
+      } else if (msg.type === 'game_over') {
+        isGameOver = true;
+        isMyTurn = false; // Ensure no more turns
+        solution = msg.solution;
+        allGuesses = msg.guesses || [];
+        
+        updateBoard();
+        
+        if (msg.loserId === playerId) {
+          gameResult = 'lost';
+          message = `You lost! You guessed the word "${msg.solution}"!`;
+        } else {
+          gameResult = 'won';
+          message = `You won! Your opponent guessed the word "${msg.solution}"!`;
+        }
+        showMessage = true;
+      }
+    };
+
+    socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    socket.onclose = () => {
+      console.log('WebSocket connection closed');
+    };
+  });
+
+  // UI helpers
   function getTileColor(row, col) {
     const status = statuses[row]?.[col];
     if (status === 'correct') return '#538d4e';
@@ -369,20 +348,10 @@
     if (key === 'enter' || key === 'backspace') return '#818384';
     const upperKey = key.toUpperCase();
     const status = letterStatuses[upperKey];
-    console.log(`Getting color for key ${upperKey}:`, status);
     if (status === 'correct') return '#538d4e';
     if (status === 'present') return '#b59f3b';
     if (status === 'absent') return '#3a3a3c';
     return '#818384';
-  }
-
-  function mergeStatus(current, newStatus) {
-    console.log(`Merging statuses: ${current} + ${newStatus}`);
-    if (!current) return newStatus;
-    if (current === 'correct') return 'correct';
-    if (current === 'present' && newStatus === 'correct') return 'correct';
-    if (current === 'absent' && (newStatus === 'present' || newStatus === 'correct')) return newStatus;
-    return current;
   }
 </script>
 
@@ -411,7 +380,7 @@
 </div>
 
 <div class="keyboard">
-  {#each rows as row}
+  {#each KEYBOARD_ROWS as row}
     <div class="kb-row">
       {#each row as key}
         {#if key === 'enter' || key === 'backspace'}
