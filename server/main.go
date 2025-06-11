@@ -420,6 +420,7 @@ func (s *GameServer) sendGameState(game *Game, playerId string) {
 		Guesses:      game.Guesses,
 		GameOver:     game.GameOver,
 		Players:      game.Players,
+		LoserId:      game.LoserId,
 	}
 
 	data, err := json.Marshal(msg)
@@ -441,6 +442,7 @@ func (s *GameServer) broadcastGameState(game *Game) {
 		Guesses:      game.Guesses,
 		GameOver:     game.GameOver,
 		Players:      game.Players,
+		LoserId:      game.LoserId,
 	}
 
 	data, err := json.Marshal(msg)

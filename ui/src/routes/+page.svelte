@@ -90,6 +90,8 @@
     currentLetterIndex = 0;
     letterStatuses = {};
     gameResult = null;
+    showMessage = false;
+    message = '';
     
     // Create new game
     createNewGame();
@@ -146,6 +148,15 @@
         // Update turn status message
         if (isGameOver) {
           turnStatusMessage = '';
+          // Set the appropriate game over message
+          if (msg.loserId === playerId) {
+            message = `You lost! You guessed the word "${msg.solution}"!`;
+            gameResult = 'lost';
+          } else if (msg.loserId) { // Only show won message if there is a loser
+            message = `You won! Your opponent guessed the word "${msg.solution}"!`;
+            gameResult = 'won';
+          }
+          showMessage = true;
         } else if (isSpectator) {
           turnStatusMessage = "You are spectating this game";
         } else {
