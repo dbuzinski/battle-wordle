@@ -1,4 +1,4 @@
-export const allowed_guesses = [
+export const allowedGuesses = [
 	'noles',
 	'melas',
 	'waist',

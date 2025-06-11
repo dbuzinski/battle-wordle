@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 
@@ -328,15 +329,32 @@ func (s *GameServer) broadcastGameOver(game *Game) {
 
 // Get random word
 func getRandomWord() string {
-	words := []string{
-		"APPLE", "BEACH", "CLOUD", "DREAM", "EARTH",
-		"FLAME", "GHOST", "HEART", "IVORY", "JUICE",
-		"KNIFE", "LEMON", "MONEY", "NIGHT", "OCEAN",
-		"PIANO", "QUEEN", "RADIO", "SMILE", "TIGER",
-		"UMBRA", "VOICE", "WATER", "XEROX", "YACHT",
-		"ZEBRA",
+	// Read the word list file
+	content, err := os.ReadFile("word_list.txt")
+	if err != nil {
+		log.Printf("Error reading word list: %v", err)
+		// Fallback to a default word if file can't be read
+		return "APPLE"
 	}
-	return words[rand.Intn(len(words))]
+
+	// Split the content into words
+	words := strings.Split(string(content), "\n")
+	
+	// Filter out any empty lines
+	var validWords []string
+	for _, word := range words {
+		if word != "" {
+			validWords = append(validWords, strings.ToUpper(word))
+		}
+	}
+
+	if len(validWords) == 0 {
+		log.Printf("No valid words found in word list")
+		return "APPLE"
+	}
+
+	// Return a random word from the list
+	return validWords[rand.Intn(len(validWords))]
 }
 
 // Get random player

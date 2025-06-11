@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
+  import { allowedGuesses } from '$lib/data/allowed_guesses';
 
   // Constants
   const WORD_LENGTH = 5;
@@ -248,6 +249,11 @@
 
   function validateGuess(guess) {
     const guessArray = guess.split('');
+
+    if (!allowedGuesses.includes(guess)) {
+      showMessageTemporarily("Not in word list");
+      return false;
+    }
     
     // First check if correct letters are in their correct positions
     for (let prevGuessIndex = 0; prevGuessIndex < allGuesses.length; prevGuessIndex++) {
