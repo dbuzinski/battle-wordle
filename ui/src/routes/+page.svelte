@@ -1,5 +1,7 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
+  import { browser } from '$app/environment';
 
   // Constants
   const WORD_LENGTH = 5;
@@ -14,50 +16,169 @@
   ];
 
   // Game state
-  let isGameOver = false;
-  let isMyTurn = false;
-  let solution = '';
-  let allGuesses = [];
+  let gameId: string;
+  let socket: WebSocket;
+  let playerId: string;
+  let playerName: string = '';
+  let isJoining: boolean = false;
+  let showMessage: boolean = false;
+  let message: string = '';
+  let messageTimeout: number;
+  let isMyTurn: boolean = false;
+  let isGameOver: boolean = false;
+  let gameResult: 'won' | 'lost' | null = null;
+  let allGuesses: string[] = [];
+  let statuses: string[][] = [];
+  let solution: string = '';
+  let flippingRow: number = -1;
+  let currentGuess: string = '';
+  let showCopiedMessage: boolean = false;
   let guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
-  let statuses = [];
   let currentGuessIndex = 0;
   let currentLetterIndex = 0;
   let letterStatuses = {};
   let revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
-  let flippingRow = -1;
   let shakingRow = -1;
-  let gameResult = null;
-
-  // UI state
-  let message = '';
-  let showMessage = false;
-  let messageTimeout = null;
-
-  // WebSocket state
-  let socket = null;
-  let playerId = '';
-  let playerName = '';
 
   // Cookie management
-  function setCookie(name, value) {
+  function setCookie(name: string, value: string) {
     document.cookie = `${name}=${value};path=/`;
   }
 
-  function getCookie(name) {
+  function getCookie(name: string) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop().split(';').shift();
+    if (parts.length === 2) return parts.pop()?.split(';').shift();
+    return null;
   }
 
-  // Message handling
-  function showMessageTemporarily(msg) {
-    if (isGameOver) return;
+  // UI state
+  function showMessageTemporarily(msg: string) {
     message = msg;
     showMessage = true;
     if (messageTimeout) clearTimeout(messageTimeout);
-    messageTimeout = setTimeout(() => {
+    messageTimeout = window.setTimeout(() => {
       showMessage = false;
-    }, MESSAGE_DURATION);
+    }, 3000);
+  }
+
+  function copyGameLink() {
+    const gameUrl = `${window.location.origin}${window.location.pathname}?game=${gameId}`;
+    navigator.clipboard.writeText(gameUrl).then(() => {
+      showCopiedMessage = true;
+      setTimeout(() => {
+        showCopiedMessage = false;
+      }, 2000);
+    });
+  }
+
+  function createNewGame() {
+    gameId = crypto.randomUUID();
+    window.history.replaceState({}, '', `?game=${gameId}`);
+    initializeWebSocket();
+  }
+
+  function startNewGame() {
+    // Reset game state
+    isGameOver = false;
+    isMyTurn = false;
+    solution = '';
+    allGuesses = [];
+    guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
+    statuses = [];
+    currentGuessIndex = 0;
+    currentLetterIndex = 0;
+    letterStatuses = {};
+    revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
+    flippingRow = -1;
+    shakingRow = -1;
+    gameResult = null;
+    
+    // Create new game
+    createNewGame();
+  }
+
+  function initializeWebSocket() {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}`;
+    
+    socket = new WebSocket(wsUrl);
+    
+    socket.onopen = () => {
+      console.log('WebSocket connected');
+      socket.send(JSON.stringify({
+        type: 'join',
+        from: playerId,
+        name: playerName
+      }));
+    };
+
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      console.log('Received message:', msg);
+      
+      if (msg.type === 'game_state') {
+        console.log('Processing game state:', {
+          currentPlayer: msg.currentPlayer,
+          playerId: playerId,
+          isGameOver: msg.gameOver,
+          solution: msg.solution ? 'present' : 'missing',
+          guesses: msg.guesses
+        });
+
+        // Update game state
+        isMyTurn = msg.currentPlayer === playerId;
+        isGameOver = msg.gameOver || false;
+        
+        if (msg.solution) {
+          solution = msg.solution;
+        }
+        
+        if (msg.guesses) {
+          const oldGuessCount = allGuesses.length;
+          allGuesses = msg.guesses;
+          
+          if (allGuesses.length > oldGuessCount) {
+            flippingRow = oldGuessCount;
+            setTimeout(() => {
+              flippingRow = -1;
+            }, 1050);
+          }
+          
+          updateBoard();
+        }
+        
+        // Show appropriate message based on game state
+        if (!isGameOver) {
+          message = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
+          showMessageTemporarily(message);
+        }
+      } else if (msg.type === 'game_over') {
+        console.log('Game over message received:', msg);
+        isGameOver = true;
+        isMyTurn = false;
+        solution = msg.solution;
+        allGuesses = msg.guesses || [];
+        updateBoard();
+        
+        if (msg.loserId === playerId) {
+          gameResult = 'lost';
+          message = `You lost! You guessed the word "${msg.solution}"!`;
+        } else {
+          gameResult = 'won';
+          message = `You won! Your opponent guessed the word "${msg.solution}"!`;
+        }
+        showMessage = true;
+      }
+    };
+
+    socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    socket.onclose = () => {
+      console.log('WebSocket connection closed');
+    };
   }
 
   // Game logic
@@ -243,113 +364,28 @@
 
   // WebSocket handling
   onMount(() => {
-    // Reset game state
-    isGameOver = false;
-    isMyTurn = false;
-    solution = '';
-    allGuesses = [];
-    guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
-    statuses = [];
-    currentGuessIndex = 0;
-    currentLetterIndex = 0;
-    letterStatuses = {};
-    revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
-    flippingRow = -1;
-    shakingRow = -1;
-    gameResult = null;
-
-    playerId = getCookie("playerId");
-    playerName = getCookie("playerName");
-
-    if (!playerId) {
-      playerId = crypto.randomUUID();
-      setCookie("playerId", playerId);
-    }
-
-    if (!playerName) {
-      playerName = prompt("Enter your name") || "Anonymous";
-      setCookie("playerName", playerName);
-    }
-
-    socket = new WebSocket('ws://localhost:8080/ws');
-
-    socket.onopen = () => {
-      console.log('WebSocket connected');
-      socket.send(JSON.stringify({
-        type: 'join',
-        from: playerId,
-        name: playerName
-      }));
-    };
-
-    socket.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      console.log('Received message:', msg);
-      
-      if (msg.type === 'game_state') {
-        console.log('Processing game state:', {
-          currentPlayer: msg.currentPlayer,
-          playerId: playerId,
-          isGameOver: msg.gameOver,
-          solution: msg.solution ? 'present' : 'missing',
-          guesses: msg.guesses
-        });
-
-        // Update game state
-        isMyTurn = msg.currentPlayer === playerId;
-        isGameOver = msg.gameOver || false;
-        
-        if (msg.solution) {
-          solution = msg.solution;
-        }
-        
-        if (msg.guesses) {
-          const oldGuessCount = allGuesses.length;
-          allGuesses = msg.guesses;
-          
-          if (allGuesses.length > oldGuessCount) {
-            flippingRow = oldGuessCount;
-            setTimeout(() => {
-              flippingRow = -1;
-            }, 1050);
-          }
-          
-          updateBoard();
-        }
-        
-        // Show appropriate message based on game state
-        if (!isGameOver) {
-          message = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
-          showMessageTemporarily(message);
-        }
-      } else if (msg.type === 'game_over') {
-        console.log('Game over message received:', msg);
-        isGameOver = true;
-        isMyTurn = false;
-        solution = msg.solution;
-        allGuesses = msg.guesses || [];
-        
-        updateBoard();
-        
-        if (msg.loserId === playerId) {
-          gameResult = 'lost';
-          message = `You lost! You guessed the word "${msg.solution}"!`;
-        } else {
-          gameResult = 'won';
-          message = `You won! Your opponent guessed the word "${msg.solution}"!`;
-        }
-        showMessage = true;
-        console.log('Game over state:', { gameResult, message, isGameOver, guesses: allGuesses });
+    if (browser) {
+      // Get or create player ID - this is a persistent identity
+      playerId = getCookie('playerId');
+      if (!playerId) {
+        playerId = crypto.randomUUID();
+        setCookie('playerId', playerId);
       }
-    };
 
-    socket.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+      // Get or create player name - also persistent
+      playerName = getCookie('playerName') || '';
+      if (!playerName) {
+        playerName = prompt('Enter your name:') || 'Player';
+        setCookie('playerName', playerName);
+      }
 
-    socket.onclose = () => {
-      console.log('WebSocket connection closed');
-    };
+      // Get game ID from URL - this is specific to the current game
+      gameId = $page.url.searchParams.get('game');
+      if (gameId) {
+        // If we have a game ID, connect to that game
+        initializeWebSocket();
+      }
+    }
   });
 
   // UI helpers
@@ -370,57 +406,97 @@
     if (status === 'absent') return '#3a3a3c';
     return '#818384';
   }
+
+  function handleJoin() {
+    if (!playerName.trim()) {
+      showMessageTemporarily('Please enter your name');
+      return;
+    }
+    
+    if (!gameId) {
+      createNewGame();
+    }
+    
+    isJoining = true;
+    socket.send(JSON.stringify({
+      type: 'join',
+      from: playerId,
+      name: playerName
+    }));
+  }
 </script>
 
 <svelte:window on:keydown={handleKey} />
 
-<h1 style="text-align: center; color: white;">Battle Wordle!</h1>
-<h2 style="text-align: center; color: white; font-size: 1.2em;">Try to avoid guessing the word!</h2>
+<div class="container">
+  {#if !gameId}
+    <div class="join-form">
+      <h1>Battle Wordle</h1>
+      <input
+        type="text"
+        bind:value={playerName}
+        placeholder="Enter your name"
+        on:keydown={(e) => e.key === 'Enter' && handleJoin()}
+      />
+      <button on:click={handleJoin}>New Game</button>
+    </div>
+  {:else}
+    <h1 style="text-align: center; color: white;">Battle Wordle!</h1>
+    <h2 style="text-align: center; color: white; font-size: 1.2em;">Try to avoid guessing the word!</h2>
 
-{#if showMessage}
-  <div class="message" class:error={message.includes('error')} class:success={message.includes('won')}>
-    {message}
-  </div>
-{/if}
-
-<div class="grid" style="display: grid; justify-content: center; grid-template-columns: repeat(5, 50px); gap: 5px;">
-  {#each guesses as guess, i}
-    {#each guess as letter, j}
-      <div
-        class="tile {flippingRow === i ? 'flipping' : ''} {revealedTiles[i][j] ? 'revealed' : ''} {shakingRow === i ? 'shake' : ''} {statuses[i]?.[j] || ''}"
-        style="--flip-bg-before: #121213; --flip-bg-after: {getTileColor(i, j)}; animation-delay: {flippingRow === i ? j * 0.15 : 0}s;"
-      >
-        {letter.toUpperCase()}
+    {#if showMessage}
+      <div class="message" class:error={message.includes('error')} class:success={message.includes('won')}>
+        {message}
       </div>
-    {/each}
-  {/each}
-</div>
+    {/if}
 
-<div class="keyboard">
-  {#each KEYBOARD_ROWS as row}
-    <div class="kb-row">
-      {#each row as key}
-        {#if key === 'enter' || key === 'backspace'}
-          <button 
-            class="kb-key" 
-            on:click={() => handleKeyPress(key)}
+    {#if isGameOver}
+      <div class="game-over">
+        <h2>{message}</h2>
+        <button class="new-game-btn" on:click={startNewGame}>Start New Game</button>
+      </div>
+    {/if}
+
+    <div class="grid" style="display: grid; justify-content: center; grid-template-columns: repeat(5, 50px); gap: 5px;">
+      {#each guesses as guess, i}
+        {#each guess as letter, j}
+          <div
+            class="tile {flippingRow === i ? 'flipping' : ''} {revealedTiles[i][j] ? 'revealed' : ''} {shakingRow === i ? 'shake' : ''} {statuses[i]?.[j] || ''}"
+            style="--flip-bg-before: #121213; --flip-bg-after: {getTileColor(i, j)}; animation-delay: {flippingRow === i ? j * 0.15 : 0}s;"
           >
-            {key === 'enter' ? 'Enter' : '⌫'}
-          </button>
-        {:else}
-          <button 
-            class="kb-key" 
-            class:correct={letterStatuses[key.toUpperCase()] === 'correct'}
-            class:present={letterStatuses[key.toUpperCase()] === 'present'}
-            class:absent={letterStatuses[key.toUpperCase()] === 'absent'}
-            on:click={() => handleKeyPress(key)}
-          >
-            {key.toUpperCase()}
-          </button>
-        {/if}
+            {letter.toUpperCase()}
+          </div>
+        {/each}
       {/each}
     </div>
-  {/each}
+
+    <div class="keyboard">
+      {#each KEYBOARD_ROWS as row}
+        <div class="kb-row">
+          {#each row as key}
+            {#if key === 'enter' || key === 'backspace'}
+              <button 
+                class="kb-key" 
+                on:click={() => handleKeyPress(key)}
+              >
+                {key === 'enter' ? 'Enter' : '⌫'}
+              </button>
+            {:else}
+              <button 
+                class="kb-key" 
+                class:correct={letterStatuses[key.toUpperCase()] === 'correct'}
+                class:present={letterStatuses[key.toUpperCase()] === 'present'}
+                class:absent={letterStatuses[key.toUpperCase()] === 'absent'}
+                on:click={() => handleKeyPress(key)}
+              >
+                {key.toUpperCase()}
+              </button>
+            {/if}
+          {/each}
+        </div>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -514,4 +590,42 @@
   }
 
   .shake { animation: shake 0.6s ease-in-out; }
+
+  .challenge-btn {
+    margin-top: 1rem;
+    padding: 0.5rem 1rem;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  .challenge-btn:hover {
+    background-color: #45a049;
+  }
+
+  .game-over {
+    text-align: center;
+    margin: 1rem 0;
+    padding: 1rem;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+  }
+
+  .new-game-btn {
+    margin-top: 1rem;
+    padding: 0.5rem 1rem;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  .new-game-btn:hover {
+    background-color: #45a049;
+  }
 </style>
