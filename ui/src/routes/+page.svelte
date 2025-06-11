@@ -548,19 +548,16 @@
     transform: rotateX(360deg);
     background-color: var(--tile-color, #121213);
     border-color: var(--tile-color, #121213);
-    animation: flipTile 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-    animation-delay: calc(var(--col-index) * 0.1s);
   }
 
-  @keyframes flipTile {
-    0% {
-      transform: rotateX(0);
-    }
-    100% {
-      transform: rotateX(360deg);
-    }
-  }
+  /* Add cascading delays for each tile in a row */
+  .tile.flipped[style*="--col-index: 0"] { transition-delay: 0s; }
+  .tile.flipped[style*="--col-index: 1"] { transition-delay: 0.1s; }
+  .tile.flipped[style*="--col-index: 2"] { transition-delay: 0.2s; }
+  .tile.flipped[style*="--col-index: 3"] { transition-delay: 0.3s; }
+  .tile.flipped[style*="--col-index: 4"] { transition-delay: 0.4s; }
 
+  /* Add a subtle bounce effect for the current row */
   .tile.current-row {
     animation: bounceTile 0.2s ease-in-out;
   }
@@ -574,10 +571,12 @@
     }
   }
 
+  /* Add a subtle glow effect for the current row */
   .tile.current-row {
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
   }
 
+  /* Add a subtle pulse animation for empty tiles in the current row */
   .tile.current-row:empty {
     animation: pulseTile 2s infinite;
   }
