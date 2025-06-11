@@ -158,7 +158,7 @@
         } else if (isSpectator) {
           turnStatusMessage = "You are spectating this game";
         } else {
-          turnStatusMessage = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
+          turnStatusMessage = isMyTurn ? "Your turn!" : "Waiting for opponent...";
         }
       } else if (msg.type === 'game_over') {
         console.log('Game over message received:', msg);
