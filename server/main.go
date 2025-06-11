@@ -2,12 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,21 +19,20 @@ const (
 
 // Message types
 const (
-	JOIN_MSG     = "join"
-	GUESS_MSG    = "guess"
-	GAME_STATE   = "game_state"
-	GAME_OVER    = "game_over"
+	JOIN_MSG    = "join"
+	GAME_STATE  = "game_state"
+	GAME_OVER   = "game_over"
+	GUESS_MSG   = "guess"
 )
 
 // Game state
 type GameState struct {
-	Players       map[string]string
-	CurrentPlayer string
-	Solution      string
-	Guesses       []string
-	GameStarted   bool
-	GameOver      bool
-	LoserId       string
+	Players     map[string]string `json:"players"`
+	CurrentPlayer string          `json:"currentPlayer"`
+	Solution    string           `json:"solution,omitempty"`
+	Guesses     []string         `json:"guesses,omitempty"`
+	LoserId     string           `json:"loserId,omitempty"`
+	GameOver    bool             `json:"gameOver,omitempty"`
 }
 
 // Message structure
@@ -49,6 +47,7 @@ type Message struct {
 	Solution      string   `json:"solution,omitempty"`
 	Guesses       []string `json:"guesses,omitempty"`
 	LoserId       string   `json:"loserId,omitempty"`
+	GameOver      bool     `json:"gameOver,omitempty"`
 }
 
 // WebSocket connection
@@ -59,48 +58,20 @@ type Client struct {
 
 // Game server
 type GameServer struct {
-	clients    map[*Client]bool
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *Client
-	state      *GameState
-	stateMutex sync.Mutex
+	state         GameState
+	stateMutex    sync.Mutex
+	connections   map[string]*websocket.Conn
 }
 
 // Create new game server
 func newGameServer() *GameServer {
 	return &GameServer{
-		clients:    make(map[*Client]bool),
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		state: &GameState{
-			Players: make(map[string]string),
+		state: GameState{
+			Players:    make(map[string]string),
+			Guesses:    make([]string, 0),
+			GameOver:   false,
 		},
-	}
-}
-
-// Start game server
-func (s *GameServer) run() {
-	for {
-		select {
-		case client := <-s.register:
-			s.clients[client] = true
-		case client := <-s.unregister:
-			if _, ok := s.clients[client]; ok {
-				delete(s.clients, client)
-				close(client.send)
-			}
-		case message := <-s.broadcast:
-			for client := range s.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(s.clients, client)
-				}
-			}
-		}
+		connections: make(map[string]*websocket.Conn),
 	}
 }
 
@@ -116,18 +87,60 @@ func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		log.Printf("Error upgrading to WebSocket: %v", err)
 		return
 	}
+	defer conn.Close()
 
-	client := &Client{
-		conn: conn,
-		send: make(chan []byte, 256),
+	var currentPlayerId string // Track the current player ID for cleanup
+
+	// Initialize game state if not already done
+	s.stateMutex.Lock()
+	if s.state.Solution == "" {
+		s.state.Solution = getRandomWord()
+		s.state.GameOver = false
+		s.state.Guesses = make([]string, 0)
+		log.Printf("New game initialized with solution: %s", s.state.Solution)
 	}
-	s.register <- client
+	log.Printf("Current game state - Solution: %s, CurrentPlayer: %s, GameOver: %v", 
+		s.state.Solution, s.state.CurrentPlayer, s.state.GameOver)
+	s.stateMutex.Unlock()
 
-	go s.writePump(client)
-	go s.readPump(client)
+	// Handle the WebSocket connection
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Printf("Error reading message: %v", err)
+			break
+		}
+
+		var msg Message
+		if err := json.Unmarshal(message, &msg); err != nil {
+			log.Printf("Error unmarshaling message: %v", err)
+			continue
+		}
+
+		log.Printf("Received message type: %s from player: %s", msg.Type, msg.From)
+
+		switch msg.Type {
+		case JOIN_MSG:
+			// Store the connection before handling join
+			s.stateMutex.Lock()
+			s.connections[msg.From] = conn
+			currentPlayerId = msg.From // Store for cleanup
+			s.stateMutex.Unlock()
+			s.handleJoin(msg.From, msg.Name)
+		case GUESS_MSG:
+			s.handleGuess(msg.From, msg.Guess)
+		}
+	}
+
+	// Clean up connection when done
+	if currentPlayerId != "" {
+		s.stateMutex.Lock()
+		delete(s.connections, currentPlayerId)
+		s.stateMutex.Unlock()
+	}
 }
 
 // Write messages to WebSocket
@@ -166,7 +179,6 @@ func (s *GameServer) writePump(c *Client) {
 // Read messages from WebSocket
 func (s *GameServer) readPump(c *Client) {
 	defer func() {
-		s.unregister <- c
 		c.conn.Close()
 	}()
 
@@ -196,77 +208,136 @@ func (s *GameServer) handleMessage(msg Message) {
 
 	switch msg.Type {
 	case JOIN_MSG:
-		s.handleJoin(msg)
+		s.handleJoin(msg.From, msg.Name)
 	case GUESS_MSG:
-		s.handleGuess(msg)
+		s.handleGuess(msg.From, msg.Guess)
 	}
 }
 
 // Handle player join
-func (s *GameServer) handleJoin(msg Message) {
-	s.state.Players[msg.From] = msg.Name
+func (s *GameServer) handleJoin(playerId string, name string) {
+	s.stateMutex.Lock()
+	defer s.stateMutex.Unlock()
 
-	if len(s.state.Players) == 2 && !s.state.GameStarted {
-		s.startNewGame()
+	log.Printf("Player %s (%s) attempting to join", name, playerId)
+	log.Printf("Current state before join - CurrentPlayer: %s, Players: %v", 
+		s.state.CurrentPlayer, s.state.Players)
+
+	// Check if player already exists
+	if _, exists := s.state.Players[playerId]; exists {
+		log.Printf("Player %s already exists", playerId)
+		return
 	}
 
-	s.broadcastState()
+	// Add player
+	s.state.Players[playerId] = name
+
+	// If no current player is set, set this player as current
+	if s.state.CurrentPlayer == "" {
+		s.state.CurrentPlayer = playerId
+		log.Printf("First player %s set as current player", playerId)
+	}
+
+	log.Printf("Sending game state to player %s - CurrentPlayer: %s, GameOver: %v", 
+		playerId, s.state.CurrentPlayer, s.state.GameOver)
+
+	// Send current game state to the joining player
+	s.sendToPlayer(playerId, Message{
+		Type:          GAME_STATE,
+		CurrentPlayer: s.state.CurrentPlayer,
+		GameOver:      s.state.GameOver,
+		Solution:      s.state.Solution,
+		Guesses:       s.state.Guesses,
+	})
 }
 
 // Handle player guess
-func (s *GameServer) handleGuess(msg Message) {
+func (s *GameServer) handleGuess(playerId string, guess string) {
 	s.stateMutex.Lock()
 	defer s.stateMutex.Unlock()
 
 	if s.state.GameOver {
-		log.Printf("Game is over, ignoring guess from %s", msg.From)
+		log.Printf("Game is over, ignoring guess from %s", playerId)
 		return
 	}
 
-	if msg.From != s.state.CurrentPlayer {
-		log.Printf("Not player's turn: %s (current: %s)", msg.From, s.state.CurrentPlayer)
+	if playerId != s.state.CurrentPlayer {
+		log.Printf("Not player's turn: %s (current: %s)", playerId, s.state.CurrentPlayer)
 		return
 	}
 
-	s.state.Guesses = append(s.state.Guesses, msg.Guess)
+	s.state.Guesses = append(s.state.Guesses, guess)
+	log.Printf("Player %s made guess: %s", playerId, guess)
 
-	if msg.Guess == s.state.Solution {
-		log.Printf("Game over! Player %s guessed the word!", msg.From)
+	// Check for case-insensitive match
+	if strings.ToUpper(guess) == strings.ToUpper(s.state.Solution) {
+		log.Printf("Game over! Player %s guessed the word!", playerId)
 		s.state.GameOver = true
-		s.state.LoserId = msg.From
+		s.state.LoserId = playerId
 		s.broadcastGameOver()
 		return
 	}
 
 	if len(s.state.Guesses) >= MAX_GUESSES {
-		log.Printf("Game over! Maximum guesses reached. Player %s loses!", msg.From)
+		log.Printf("Game over! Maximum guesses reached. Player %s loses!", playerId)
 		s.state.GameOver = true
-		s.state.LoserId = msg.From
+		s.state.LoserId = playerId
 		s.broadcastGameOver()
 		return
 	}
 
-	s.switchTurn()
-	s.broadcastState()
+	// Switch turns
+	for id := range s.state.Players {
+		if id != playerId {
+			s.state.CurrentPlayer = id
+			log.Printf("Switching turn to player: %s", id)
+			break
+		}
+	}
+
+	// Broadcast updated game state to all players
+	gameStateMsg := Message{
+		Type:          GAME_STATE,
+		CurrentPlayer: s.state.CurrentPlayer,
+		GameOver:      s.state.GameOver,
+		Solution:      s.state.Solution,
+		Guesses:       s.state.Guesses,
+	}
+
+	msgBytes, err := json.Marshal(gameStateMsg)
+	if err != nil {
+		log.Printf("Error marshaling game state: %v", err)
+		return
+	}
+
+	for id, conn := range s.connections {
+		if err := conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+			log.Printf("Error sending game state to player %s: %v", id, err)
+		}
+	}
 }
 
 // Start new game
 func (s *GameServer) startNewGame() {
-	s.state.GameStarted = true
+	log.Printf("Starting new game with players: %v", s.state.Players)
+	
+	// Initialize game state
 	s.state.GameOver = false
-	s.state.Guesses = []string{}
+	s.state.LoserId = ""
 	s.state.Solution = getRandomWord()
-	s.state.CurrentPlayer = getRandomPlayer(s.state.Players)
-}
-
-// Switch player turn
-func (s *GameServer) switchTurn() {
-	for playerId := range s.state.Players {
-		if playerId != s.state.CurrentPlayer {
-			s.state.CurrentPlayer = playerId
-			break
-		}
+	s.state.Guesses = []string{}
+	
+	// Randomly select first player
+	playerIds := make([]string, 0, len(s.state.Players))
+	for id := range s.state.Players {
+		playerIds = append(playerIds, id)
 	}
+	s.state.CurrentPlayer = playerIds[rand.Intn(len(playerIds))]
+	
+	log.Printf("Game started with solution: %s, first player: %s", s.state.Solution, s.state.CurrentPlayer)
+	
+	// Broadcast game state to all players
+	s.broadcastState()
 }
 
 // Broadcast game state
@@ -274,42 +345,44 @@ func (s *GameServer) broadcastState() {
 	s.stateMutex.Lock()
 	defer s.stateMutex.Unlock()
 
-	stateMsg := Message{
-		Type:          GAME_STATE,
+	msg := Message{
+		Type:         GAME_STATE,
 		CurrentPlayer: s.state.CurrentPlayer,
-		GameStarted:   s.state.GameStarted,
+		GameOver:      s.state.GameOver,
 		Solution:      s.state.Solution,
 		Guesses:       s.state.Guesses,
 	}
 
-	message, err := json.Marshal(stateMsg)
-	if err != nil {
-		log.Printf("error marshaling state: %v", err)
-		return
+	for playerId := range s.state.Players {
+		s.sendToPlayer(playerId, msg)
 	}
-
-	s.broadcast <- message
 }
 
 // Broadcast game over
 func (s *GameServer) broadcastGameOver() {
-	s.stateMutex.Lock()
-	defer s.stateMutex.Unlock()
-
-	gameOverMsg := Message{
-		Type:     GAME_OVER,
-		Solution: s.state.Solution,
-		Guesses:  s.state.Guesses,
-		LoserId:  s.state.LoserId,
+	msg := Message{
+		Type:        GAME_OVER,
+		From:        "",
+		Solution:    s.state.Solution,
+		Guesses:     s.state.Guesses,
+		LoserId:     s.state.LoserId,
+		GameOver:    true,
+		CurrentPlayer: s.state.CurrentPlayer,
 	}
-
-	message, err := json.Marshal(gameOverMsg)
+	
+	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("error marshaling game over: %v", err)
+		log.Printf("Error marshaling game over message: %v", err)
 		return
 	}
-
-	s.broadcast <- message
+	
+	log.Printf("Broadcasting game over message: %s", string(data))
+	
+	for id, conn := range s.connections {
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("Error sending game over message to player %s: %v", id, err)
+		}
+	}
 }
 
 // Get random word
@@ -336,16 +409,27 @@ func getRandomPlayer(players map[string]string) string {
 
 // Main function
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	server := newGameServer()
-	go server.run()
-
 	http.HandleFunc("/ws", server.handleWebSocket)
-	http.Handle("/", http.FileServer(http.Dir("ui")))
+	log.Println("Server starting on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
+}
 
-	fmt.Println("Server starting on :8080...")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatal("ListenAndServe: ", err)
+func (s *GameServer) sendToPlayer(playerId string, msg Message) {
+	// Find the connection for this player
+	conn, exists := s.connections[playerId]
+	if !exists {
+		log.Printf("No connection found for player %s", playerId)
+		return
+	}
+
+	msgBytes, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshaling message: %v", err)
+		return
+	}
+
+	if err := conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+		log.Printf("Error sending message to player %s: %v", playerId, err)
 	}
 }

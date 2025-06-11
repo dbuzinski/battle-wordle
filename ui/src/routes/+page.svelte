@@ -2,8 +2,11 @@
   import { onMount } from 'svelte';
 
   // Constants
-  const MAX_GUESSES = 6;
   const WORD_LENGTH = 5;
+  const MAX_GUESSES = 6;
+  const FLIP_DURATION = 500;
+  const REVEAL_DELAY = 100;
+  const MESSAGE_DURATION = 2000;
   const KEYBOARD_ROWS = [
     ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
     ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
@@ -11,51 +14,50 @@
   ];
 
   // Game state
-  let socket;
-  let playerId;
-  let playerName;
+  let isGameOver = false;
   let isMyTurn = false;
   let solution = '';
-  let gameStarted = false;
+  let allGuesses = [];
   let guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
-  let statuses = Array(MAX_GUESSES).fill(null);
+  let statuses = [];
   let currentGuessIndex = 0;
   let currentLetterIndex = 0;
-  let flippingRow = -1;
-  let shakingRow = -1;
-  let isGameOver = false;
-  let gameResult = '';
-  let allGuesses = [];
   let letterStatuses = {};
   let revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
+  let flippingRow = -1;
+  let shakingRow = -1;
+  let gameResult = null;
 
   // UI state
   let message = '';
-  let messageTimeout;
   let showMessage = false;
+  let messageTimeout = null;
+
+  // WebSocket state
+  let socket = null;
+  let playerId = '';
+  let playerName = '';
 
   // Cookie management
-  function setCookie(name, value, days = 30) {
-    const expires = new Date(Date.now() + days * 86400000).toUTCString();
-    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
+  function setCookie(name, value) {
+    document.cookie = `${name}=${value};path=/`;
   }
 
   function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+    if (parts.length === 2) return parts.pop().split(';').shift();
   }
 
   // Message handling
   function showMessageTemporarily(msg) {
+    if (isGameOver) return;
     message = msg;
     showMessage = true;
     if (messageTimeout) clearTimeout(messageTimeout);
     messageTimeout = setTimeout(() => {
-      if (!isGameOver) {
-        showMessage = false;
-      }
-    }, 2000);
+      showMessage = false;
+    }, MESSAGE_DURATION);
   }
 
   // Game logic
@@ -90,7 +92,7 @@
   function updateBoard() {
     // Reset the board
     guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
-    statuses = Array(MAX_GUESSES).fill(null);
+    statuses = [];
     revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
     letterStatuses = {};
     
@@ -127,7 +129,7 @@
         if (prevStatuses[i] === 'correct') {
           const correctLetter = prevGuess[i].toUpperCase();
           if (guessArray[i].toUpperCase() !== correctLetter) {
-            message = `Letter ${correctLetter} must be in position ${i + 1}`;
+            showMessageTemporarily(`Letter ${correctLetter} must be in position ${i + 1}`);
             return false;
           }
         }
@@ -143,7 +145,7 @@
         const prevStatuses = statuses[prevGuessIndex];
         
         if (prevGuess[i].toUpperCase() === letter && prevStatuses[i] === 'present') {
-          message = `Cannot use letter ${letter} in position ${i + 1} - it was marked as present there`;
+          showMessageTemporarily(`Cannot use letter ${letter} in position ${i + 1} - it was marked as present there`);
           return false;
         }
       }
@@ -166,7 +168,7 @@
     const usedLetters = new Set(guessArray.map(l => l.toUpperCase()));
     for (const requiredLetter of requiredLetters) {
       if (!usedLetters.has(requiredLetter)) {
-        message = `Must use letter ${requiredLetter} - it's in the word`;
+        showMessageTemporarily(`Must use letter ${requiredLetter} - it's in the word`);
         return false;
       }
     }
@@ -175,11 +177,11 @@
     for (let i = 0; i < guessArray.length; i++) {
       const letter = guessArray[i].toUpperCase();
       if (letterStatuses[letter] === 'absent') {
-        message = `Cannot use letter ${letter} - it's not in the word`;
+        showMessageTemporarily(`Cannot use letter ${letter} - it's not in the word`);
         return false;
       }
     }
-    
+
     return true;
   }
 
@@ -192,40 +194,36 @@
   }
 
   // Input handling
-  async function submitGuess() {
-    if (!isMyTurn || isGameOver) {
-      console.log('Cannot submit guess: not your turn or game is over');
-      return;
-    }
-    
-    const guess = guesses[currentGuessIndex].join('');
-    if (guess.length !== WORD_LENGTH) {
-      showMessageTemporarily('Not enough letters');
-      return;
-    }
-
-    if (!validateGuess(guess)) {
-      showMessageTemporarily(message);
-      return;
-    }
-    
-    socket.send(JSON.stringify({
-      type: 'guess',
-      from: playerId,
-      guess: guess
-    }));
-  }
-
   function handleKey(e) {
-    if (isGameOver || !isMyTurn) {
-      console.log('Cannot handle key: game is over or not your turn');
+    // Only handle keyboard input if it's your turn and the game isn't over
+    if (isGameOver) {
+      console.log('Game is over');
+      return;
+    }
+
+    if (!isMyTurn) {
+      console.log('Not your turn');
       return;
     }
 
     const key = e.key.toLowerCase();
 
     if (key === 'enter') {
-      submitGuess();
+      const guess = guesses[currentGuessIndex].join('');
+      if (guess.length === WORD_LENGTH) {
+        if (!validateGuess(guess)) {
+          return;
+        }
+        console.log('Submitting guess:', guess);
+        socket.send(JSON.stringify({
+          type: 'guess',
+          from: playerId,
+          guess: guess
+        }));
+        // Clear the current guess
+        guesses[currentGuessIndex] = Array(WORD_LENGTH).fill('');
+        currentLetterIndex = 0;
+      }
     } else if (key === 'backspace') {
       if (currentLetterIndex > 0) {
         currentLetterIndex--;
@@ -245,6 +243,21 @@
 
   // WebSocket handling
   onMount(() => {
+    // Reset game state
+    isGameOver = false;
+    isMyTurn = false;
+    solution = '';
+    allGuesses = [];
+    guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
+    statuses = [];
+    currentGuessIndex = 0;
+    currentLetterIndex = 0;
+    letterStatuses = {};
+    revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
+    flippingRow = -1;
+    shakingRow = -1;
+    gameResult = null;
+
     playerId = getCookie("playerId");
     playerName = getCookie("playerName");
 
@@ -274,13 +287,17 @@
       console.log('Received message:', msg);
       
       if (msg.type === 'game_state') {
-        // Don't update game state if the game is over
-        if (isGameOver) {
-          return;
-        }
+        console.log('Processing game state:', {
+          currentPlayer: msg.currentPlayer,
+          playerId: playerId,
+          isGameOver: msg.gameOver,
+          solution: msg.solution ? 'present' : 'missing',
+          guesses: msg.guesses
+        });
 
+        // Update game state
         isMyTurn = msg.currentPlayer === playerId;
-        gameStarted = msg.gameStarted;
+        isGameOver = msg.gameOver || false;
         
         if (msg.solution) {
           solution = msg.solution;
@@ -300,16 +317,15 @@
           updateBoard();
         }
         
-        if (gameStarted && !isGameOver) {
+        // Show appropriate message based on game state
+        if (!isGameOver) {
           message = isMyTurn ? "Your turn! Try to avoid guessing the word!" : "Waiting for opponent...";
-          showMessageTemporarily(message);
-        } else if (!gameStarted) {
-          message = "Waiting for opponent to join...";
           showMessageTemporarily(message);
         }
       } else if (msg.type === 'game_over') {
+        console.log('Game over message received:', msg);
         isGameOver = true;
-        isMyTurn = false; // Ensure no more turns
+        isMyTurn = false;
         solution = msg.solution;
         allGuesses = msg.guesses || [];
         
@@ -323,6 +339,7 @@
           message = `You won! Your opponent guessed the word "${msg.solution}"!`;
         }
         showMessage = true;
+        console.log('Game over state:', { gameResult, message, isGameOver, guesses: allGuesses });
       }
     };
 
@@ -361,7 +378,7 @@
 <h2 style="text-align: center; color: white; font-size: 1.2em;">Try to avoid guessing the word!</h2>
 
 {#if showMessage}
-  <div class="message-popover" class:game-over={isGameOver}>
+  <div class="message" class:error={message.includes('error')} class:success={message.includes('won')}>
     {message}
   </div>
 {/if}
@@ -461,36 +478,26 @@
     background-color: #3a3a3c;
   }
 
-  .message-popover {
+  .message {
     position: fixed;
-    top: 20%;
+    top: 20px;
     left: 50%;
-    transform: translate(-50%, -50%);
-    background-color: #f8f8f8;
-    color: black;
-    padding: 1rem 2rem;
-    border-radius: 10px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-    font-size: 1.2rem;
-    z-index: 1000;
-    animation: fadeIn 0.3s ease-in-out;
-  }
-
-  .message-popover.game-over {
-    background-color: #538d4e;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    border-radius: 5px;
+    background-color: #333;
     color: white;
-    font-size: 1.5rem;
-    font-weight: bold;
+    z-index: 1000;
+    text-align: center;
   }
 
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translate(-50%, -60%); }
-    to { opacity: 1; transform: translate(-50%, -50%); }
+  .message.error {
+    background-color: #ff4444;
   }
 
-  .key:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .message.success {
+    background-color: #44ff44;
+    color: black;
   }
 
   @keyframes flip {
