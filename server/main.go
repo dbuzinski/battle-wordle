@@ -21,6 +21,7 @@ const (
 	GAME_OVER   = "game_over"
 	GUESS_MSG   = "guess"
 	PLAYER_ID   = "player_id"
+	PLACEHOLDER = "waiting_for_opponent"
 )
 
 var upgrader = websocket.Upgrader{
@@ -225,6 +226,10 @@ func (s *GameServer) handleJoin(game *Game, playerId string, conn *websocket.Con
 		if game.CurrentPlayer == "" {
 			game.CurrentPlayer = playerId
 			log.Printf("First player %s set as current player", playerId)
+		} else if game.CurrentPlayer == PLACEHOLDER {
+			// If current player is placeholder, replace it with the new player
+			game.CurrentPlayer = playerId
+			log.Printf("Second player %s joined, replacing placeholder", playerId)
 		}
 	}
 
@@ -246,7 +251,13 @@ func (s *GameServer) handleGuess(game *Game, playerId string, guess string) {
 		return
 	}
 
+	// Don't allow moves if it's not the player's turn
 	if game.CurrentPlayer != playerId {
+		return
+	}
+
+	// Allow first player's first move, but require two players for subsequent moves
+	if len(game.Guesses) > 0 && len(game.Players) < 2 {
 		return
 	}
 
@@ -261,14 +272,20 @@ func (s *GameServer) handleGuess(game *Game, playerId string, guess string) {
 		return
 	}
 
-	// Switch turns
-	for i, id := range game.Players {
-		if id == playerId {
-			// Set current player to the other player
-			nextPlayerIndex := (i + 1) % len(game.Players)
-			game.CurrentPlayer = game.Players[nextPlayerIndex]
-			log.Printf("Switching turn to player: %s", game.CurrentPlayer)
-			break
+	// If this was the first player's first move and there's no second player yet,
+	// set current player to placeholder
+	if len(game.Players) < 2 {
+		game.CurrentPlayer = PLACEHOLDER
+	} else {
+		// Switch turns between the two players
+		for i, id := range game.Players {
+			if id == playerId {
+				// Set current player to the other player
+				nextPlayerIndex := (i + 1) % len(game.Players)
+				game.CurrentPlayer = game.Players[nextPlayerIndex]
+				log.Printf("Switching turn to player: %s", game.CurrentPlayer)
+				break
+			}
 		}
 	}
 

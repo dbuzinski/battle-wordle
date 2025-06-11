@@ -1,4 +1,4 @@
-<script lang="ts">
+<script>
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
@@ -7,7 +7,6 @@
   // Constants
   const WORD_LENGTH = 5;
   const MAX_GUESSES = 6;
-  const MESSAGE_DURATION = 2000;
   const KEYBOARD_ROWS = [
     ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
     ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
@@ -15,37 +14,33 @@
   ];
 
   // Game state
-  let gameId: string;
-  let socket: WebSocket;
-  let playerId: string;
-  let isJoining: boolean = false;
-  let showMessage: boolean = false;
-  let message: string = '';
-  let turnStatusMessage: string = '';
-  let messageTimeout: number;
-  let isMyTurn: boolean = false;
-  let isGameOver: boolean = false;
-  let isSpectator: boolean = false;
-  let gameResult: 'won' | 'lost' | null = null;
-  let allGuesses: string[] = [];
-  let statuses: string[][] = [];
-  let solution: string = '';
-  let currentGuess: string = '';
-  let showCopiedMessage: boolean = false;
+  let gameId;
+  let socket;
+  let playerId;
+  let showMessage = false;
+  let message = '';
+  let turnStatusMessage = '';
+  let messageTimeout;
+  let isMyTurn = false;
+  let isGameOver = false;
+  let isSpectator = false;
+  let isJoining = false;
+  let gameResult = null;
+  let allGuesses = [];
+  let statuses = [];
+  let solution = '';
   let guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
   let currentGuessIndex = 0;
   let currentLetterIndex = 0;
   let letterStatuses = {};
-  let playerIds: string[] = [];
-  let isAnimating: boolean = false;
-  let animationComplete: boolean = false;
+  let playerIds = [];
 
   // Cookie management
-  function setCookie(name: string, value: string) {
+  function setCookie(name, value) {
     document.cookie = `${name}=${value};path=/`;
   }
 
-  function getCookie(name: string) {
+  function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
     if (parts.length === 2) return parts.pop()?.split(';').shift();
@@ -53,23 +48,13 @@
   }
 
   // UI state
-  function showMessageTemporarily(msg: string) {
+  function showMessageTemporarily(msg) {
     message = msg;
     showMessage = true;
     if (messageTimeout) clearTimeout(messageTimeout);
     messageTimeout = window.setTimeout(() => {
       showMessage = false;
     }, 3000);
-  }
-
-  function copyGameLink() {
-    const gameUrl = `${window.location.origin}${window.location.pathname}?game=${gameId}`;
-    navigator.clipboard.writeText(gameUrl).then(() => {
-      showCopiedMessage = true;
-      setTimeout(() => {
-        showCopiedMessage = false;
-      }, 2000);
-    });
   }
 
   function createNewGame() {
@@ -159,6 +144,9 @@
           showMessage = true;
         } else if (isSpectator) {
           turnStatusMessage = "You are spectating this game";
+        } else if (msg.currentPlayer === 'waiting_for_opponent') {
+          turnStatusMessage = "Waiting for opponent to join...";
+          isMyTurn = false;
         } else {
           turnStatusMessage = isMyTurn ? "Your turn!" : "Waiting for opponent...";
         }
@@ -225,8 +213,6 @@
     guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
     statuses = [];
     letterStatuses = {};
-    isAnimating = true;
-    animationComplete = false;
     
     // Update the board with all guesses
     allGuesses.forEach((guess, index) => {
@@ -240,26 +226,20 @@
     currentGuessIndex = allGuesses.length;
     currentLetterIndex = 0;
 
-    // Set a timeout to mark animation as complete after all tiles have flipped
     setTimeout(() => {
-      isAnimating = false;
-      animationComplete = true;
-      
-      // Update keyboard colors after animation completes
       allGuesses.forEach((guess, index) => {
         if (index < MAX_GUESSES) {
           const guessStatuses = getGuessStatuses(guess, solution);
           guessStatuses.forEach((status, i) => {
             const letter = guess[i].toUpperCase();
-            const currentStatus = letterStatuses[letter];
+            const currentStatus = letterStatuses[letter] || null;
             letterStatuses[letter] = mergeStatus(currentStatus, status);
           });
         }
       });
-    }, 1000 + (WORD_LENGTH * 200)); // Increased base delay + time for all tiles to flip
+    }, 600); // Just wait for the last tile to finish (0.6s + 0.2s delay)
   }
 
-  // Add this new function to handle initial load
   function initializeBoard() {
     // Don't animate on initial load
     updateBoard();
@@ -298,7 +278,7 @@
         const prevStatuses = statuses[prevGuessIndex];
         
         if (prevGuess[i].toUpperCase() === letter && prevStatuses[i] === 'present') {
-          showMessageTemporarily(`Cannot use letter ${letter} in position ${i + 1} - it was marked as present there`);
+          showMessageTemporarily(`Cannot use letter ${letter} in position ${i + 1}`);
           return false;
         }
       }
@@ -321,7 +301,7 @@
     const usedLetters = new Set(guessArray.map(l => l.toUpperCase()));
     for (const requiredLetter of requiredLetters) {
       if (!usedLetters.has(requiredLetter)) {
-        showMessageTemporarily(`Must use letter ${requiredLetter} - it's in the word`);
+        showMessageTemporarily(`Must use letter ${requiredLetter}`);
         return false;
       }
     }
@@ -330,7 +310,7 @@
     for (let i = 0; i < guessArray.length; i++) {
       const letter = guessArray[i].toUpperCase();
       if (letterStatuses[letter] === 'absent') {
-        showMessageTemporarily(`Cannot use letter ${letter} - it's not in the word`);
+        showMessageTemporarily(`Cannot use letter ${letter}`);
         return false;
       }
     }
@@ -428,7 +408,7 @@
   function getKeyColor(key) {
     if (key === 'enter' || key === 'backspace') return '#818384';
     const upperKey = key.toUpperCase();
-    const status = letterStatuses[upperKey];
+    const status = letterStatuses[upperKey] || null;
     if (status === 'correct') return '#538d4e';
     if (status === 'present') return '#b59f3b';
     if (status === 'absent') return '#3a3a3c';
@@ -478,14 +458,10 @@
         <div
           class="tile"
           class:flipped={statuses[i]?.[j]}
-          style="--tile-color: {getTileColor(i, j)}; --flip-delay: {j * 200}ms;"
+          class:current-row={i === currentGuessIndex}
+          style="--tile-color: {getTileColor(i, j)}; --row-index: {i}; --col-index: {j}"
         >
-          <div class="tile-front">
-            {letter.toUpperCase()}
-          </div>
-          <div class="tile-back">
-            {letter.toUpperCase()}
-          </div>
+          {letter.toUpperCase()}
         </div>
       {/each}
     {/each}
@@ -524,95 +500,153 @@
 </div>
 
 <style>
-  :global(body) { background: #121213; margin: 0; }
+  :global(body) { 
+    background: #121213; 
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  }
   
+  .container {
+    max-width: 500px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
   .tile {
     width: 50px; 
     height: 50px;
-    position: relative;
-    perspective: 1000px;
-    transform-style: preserve-3d;
-  }
-
-  .tile-front,
-  .tile-back {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    backface-visibility: hidden;
     display: flex;
     justify-content: center;
     align-items: center;
     font-weight: bold;
     font-size: 1.5rem;
     color: white;
-    border: 2px solid #999;
-    transition: transform 0.8s ease;
-  }
-
-  .tile-front {
-    background-color: var(--tile-color, #121213);
-    transform: rotateX(0deg);
-  }
-
-  .tile-back {
+    border: 2px solid #3a3a3c;
     background-color: #121213;
-    transform: rotateX(180deg);
+    transform-style: preserve-3d;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
+    position: relative;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   }
 
-  .tile.flipped .tile-front {
-    transform: rotateX(180deg);
+  .tile:hover {
+    border-color: #565758;
   }
 
-  .tile.flipped .tile-back {
-    transform: rotateX(0deg);
+  .tile::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: var(--tile-color, #121213);
+    transform: rotateX(180deg);
+    backface-visibility: hidden;
+    border-radius: 2px;
   }
 
   .tile.flipped {
-    animation: flip 0.8s ease forwards;
-    animation-delay: var(--flip-delay, 0ms);
+    transform: rotateX(360deg);
+    background-color: var(--tile-color, #121213);
+    border-color: var(--tile-color, #121213);
+    animation: flipTile 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation-delay: calc(var(--col-index) * 0.1s);
   }
 
-  @keyframes flip {
+  @keyframes flipTile {
     0% {
       transform: rotateX(0);
     }
     100% {
-      transform: rotateX(180deg);
+      transform: rotateX(360deg);
+    }
+  }
+
+  .tile.current-row {
+    animation: bounceTile 0.2s ease-in-out;
+  }
+
+  @keyframes bounceTile {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.05);
+    }
+  }
+
+  .tile.current-row {
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+  }
+
+  .tile.current-row:empty {
+    animation: pulseTile 2s infinite;
+  }
+
+  @keyframes pulseTile {
+    0%, 100% {
+      border-color: #3a3a3c;
+    }
+    50% {
+      border-color: #565758;
     }
   }
 
   .keyboard {
-    margin-top: 1rem;
+    margin-top: 2rem;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   }
 
-  .kb-row { display: flex; gap: 6px; }
+  .kb-row { 
+    display: flex; 
+    gap: 6px;
+    margin: 0.25rem 0;
+  }
 
   .kb-key {
-    padding: 10px; min-width: 36px;
-    border: none; border-radius: 4px;
-    font-weight: bold; color: white;
-    text-transform: uppercase; cursor: pointer;
-    transition: background-color 0.2s ease;
+    padding: 12px;
+    min-width: 40px;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+    color: white;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     background-color: #818384;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    user-select: none;
   }
 
-  .kb-key:active { transform: scale(0.95); }
+  .kb-key:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .kb-key:active { 
+    transform: translateY(1px);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  }
   
   .kb-key.correct {
     background-color: #538d4e;
+    box-shadow: 0 2px 4px rgba(83, 141, 78, 0.3);
   }
   
   .kb-key.present {
     background-color: #b59f3b;
+    box-shadow: 0 2px 4px rgba(181, 159, 59, 0.3);
   }
   
   .kb-key.absent {
     background-color: #3a3a3c;
+    box-shadow: 0 2px 4px rgba(58, 58, 60, 0.3);
   }
 
   .message {
@@ -620,20 +654,33 @@
     top: 20px;
     left: 50%;
     transform: translateX(-50%);
-    padding: 10px 20px;
-    border-radius: 5px;
-    background-color: #333;
+    padding: 12px 24px;
+    border-radius: 8px;
+    background-color: rgba(51, 51, 51, 0.95);
     color: white;
     z-index: 1000;
     text-align: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    animation: slideDown 0.3s ease-out;
+  }
+
+  @keyframes slideDown {
+    from {
+      transform: translate(-50%, -100%);
+      opacity: 0;
+    }
+    to {
+      transform: translate(-50%, 0);
+      opacity: 1;
+    }
   }
 
   .message.error {
-    background-color: #ff4444;
+    background-color: rgba(255, 68, 68, 0.95);
   }
 
   .message.success {
-    background-color: #44ff44;
+    background-color: rgba(68, 255, 68, 0.95);
     color: black;
   }
 
@@ -642,13 +689,15 @@
     color: white;
     font-size: 1.2em;
     margin: 1rem 0;
-    padding: 0.5rem;
+    padding: 0.75rem;
     background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
   }
 
   .turn-status.spectator {
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(255, 255, 255, 0.15);
     font-style: italic;
   }
 
@@ -656,47 +705,88 @@
     display: flex;
     justify-content: center;
     margin: 2rem 0;
+    gap: 1rem;
   }
 
   .game-over {
     position: fixed;
-    top: 20px;
+    top: 50%;
     left: 50%;
-    transform: translateX(-50%);
-    padding: 10px 20px;
-    border-radius: 5px;
-    background-color: #333;
+    transform: translate(-50%, -50%);
+    padding: 2rem;
+    border-radius: 12px;
+    background-color: rgba(51, 51, 51, 0.95);
     color: white;
     z-index: 1000;
     text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    animation: fadeIn 0.5s ease-out;
+    backdrop-filter: blur(8px);
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -40%);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -50%);
+    }
   }
 
   .game-over h2 {
     margin: 0;
-    font-size: 1.2rem;
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
   }
 
   .new-game-btn {
-    padding: 0.75rem 1.5rem;
+    padding: 1rem 2rem;
     background-color: #538d4e;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 1.1rem;
-    transition: all 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     font-weight: bold;
     min-width: 200px;
+    box-shadow: 0 4px 12px rgba(83, 141, 78, 0.3);
   }
 
   .new-game-btn:hover {
     background-color: #4a7d45;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(83, 141, 78, 0.4);
   }
 
   .new-game-btn:active {
     transform: translateY(0);
-    box-shadow: none;
+    box-shadow: 0 2px 8px rgba(83, 141, 78, 0.3);
+  }
+
+  h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(45deg, #538d4e, #b59f3b);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  h2 {
+    font-size: 1.2em;
+    color: #818384;
+    margin-top: 0;
+  }
+
+  .grid {
+    display: grid;
+    justify-content: center;
+    grid-template-columns: repeat(5, 50px);
+    gap: 5px;
+    margin: 2rem 0;
+    perspective: 1000px;
   }
 </style>
