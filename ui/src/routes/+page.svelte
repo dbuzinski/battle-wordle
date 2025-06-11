@@ -359,6 +359,9 @@
     const key = e.key.toLowerCase();
 
     if (key === 'enter') {
+      // Prevent the default Enter key behavior
+      e.preventDefault();
+      
       const guess = guesses[currentGuessIndex].join('');
       if (guess.length === WORD_LENGTH) {
         if (!validateGuess(guess)) {
@@ -388,7 +391,7 @@
   }
 
   function handleKeyPress(key) {
-    handleKey({ key });
+    handleKey({ key, preventDefault: () => {} });
   }
 
   // WebSocket handling
@@ -513,7 +516,7 @@
   </div>
 
   <div class="game-controls">
-    <button class="new-game-btn" on:click={startNewGame}>New Game</button>
+    <button class="new-game-btn" on:click={startNewGame} type="button">New Game</button>
   </div>
 </div>
 
