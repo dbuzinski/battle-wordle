@@ -76,7 +76,7 @@
 
   function createNewGame() {
     gameId = crypto.randomUUID();
-    window.history.replaceState({}, '', `?game=${gameId}`);
+    window.history.pushState({}, '', `?game=${gameId}`);
     initializeWebSocket();
   }
 
