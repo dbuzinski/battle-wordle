@@ -7,8 +7,6 @@
   // Constants
   const WORD_LENGTH = 5;
   const MAX_GUESSES = 6;
-  const FLIP_DURATION = 500;
-  const REVEAL_DELAY = 100;
   const MESSAGE_DURATION = 2000;
   const KEYBOARD_ROWS = [
     ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -32,16 +30,15 @@
   let allGuesses: string[] = [];
   let statuses: string[][] = [];
   let solution: string = '';
-  let flippingRow: number = -1;
   let currentGuess: string = '';
   let showCopiedMessage: boolean = false;
   let guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
   let currentGuessIndex = 0;
   let currentLetterIndex = 0;
   let letterStatuses = {};
-  let revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
-  let shakingRow = -1;
   let playerIds: string[] = [];
+  let isAnimating: boolean = false;
+  let animationComplete: boolean = false;
 
   // Cookie management
   function setCookie(name: string, value: string) {
@@ -92,9 +89,6 @@
     currentGuessIndex = 0;
     currentLetterIndex = 0;
     letterStatuses = {};
-    revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
-    flippingRow = -1;
-    shakingRow = -1;
     gameResult = null;
     
     // Create new game
@@ -143,14 +137,10 @@
           const oldGuessCount = allGuesses.length;
           allGuesses = msg.guesses;
           
-          if (allGuesses.length > oldGuessCount) {
-            flippingRow = oldGuessCount;
-            setTimeout(() => {
-              flippingRow = -1;
-            }, 1050);
-          }
-          
           updateBoard();
+        } else {
+          // If this is the initial state, don't animate
+          initializeBoard();
         }
         
         // Update turn status message
@@ -223,8 +213,9 @@
     // Reset the board
     guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
     statuses = [];
-    revealedTiles = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(false));
     letterStatuses = {};
+    isAnimating = true;
+    animationComplete = false;
     
     // Update the board with all guesses
     allGuesses.forEach((guess, index) => {
@@ -232,19 +223,35 @@
         guesses[index] = guess.split('');
         const guessStatuses = getGuessStatuses(guess, solution);
         statuses[index] = guessStatuses;
-        revealedTiles[index] = Array(WORD_LENGTH).fill(true);
-        
-        // Update letter statuses
-        guessStatuses.forEach((status, i) => {
-          const letter = guess[i].toUpperCase();
-          const currentStatus = letterStatuses[letter];
-          letterStatuses[letter] = mergeStatus(currentStatus, status);
-        });
       }
     });
     
     currentGuessIndex = allGuesses.length;
     currentLetterIndex = 0;
+
+    // Set a timeout to mark animation as complete after all tiles have flipped
+    setTimeout(() => {
+      isAnimating = false;
+      animationComplete = true;
+      
+      // Update keyboard colors after animation completes
+      allGuesses.forEach((guess, index) => {
+        if (index < MAX_GUESSES) {
+          const guessStatuses = getGuessStatuses(guess, solution);
+          guessStatuses.forEach((status, i) => {
+            const letter = guess[i].toUpperCase();
+            const currentStatus = letterStatuses[letter];
+            letterStatuses[letter] = mergeStatus(currentStatus, status);
+          });
+        }
+      });
+    }, 1000 + (WORD_LENGTH * 200)); // Increased base delay + time for all tiles to flip
+  }
+
+  // Add this new function to handle initial load
+  function initializeBoard() {
+    // Don't animate on initial load
+    updateBoard();
   }
 
   function validateGuess(guess) {
@@ -442,7 +449,7 @@
     </div>
   {/if}
 
-  {#if showMessage}
+  {#if showMessage && !isGameOver}
     <div class="message" class:error={message.includes('error')} class:success={message.includes('won')}>
       {message}
     </div>
@@ -451,7 +458,6 @@
   {#if isGameOver}
     <div class="game-over">
       <h2>{message}</h2>
-      <button class="new-game-btn" on:click={startNewGame}>Start New Game</button>
     </div>
   {/if}
 
@@ -459,10 +465,16 @@
     {#each guesses as guess, i}
       {#each guess as letter, j}
         <div
-          class="tile {flippingRow === i ? 'flipping' : ''} {revealedTiles[i][j] ? 'revealed' : ''} {shakingRow === i ? 'shake' : ''} {statuses[i]?.[j] || ''}"
-          style="--flip-bg-before: #121213; --flip-bg-after: {getTileColor(i, j)}; animation-delay: {flippingRow === i ? j * 0.15 : 0}s;"
+          class="tile"
+          class:flipped={statuses[i]?.[j]}
+          style="--tile-color: {getTileColor(i, j)}; --flip-delay: {j * 200}ms;"
         >
-          {letter.toUpperCase()}
+          <div class="tile-front">
+            {letter.toUpperCase()}
+          </div>
+          <div class="tile-back">
+            {letter.toUpperCase()}
+          </div>
         </div>
       {/each}
     {/each}
@@ -502,29 +514,63 @@
 
 <style>
   :global(body) { background: #121213; margin: 0; }
+  
   .tile {
-    width: 50px; height: 50px;
-    display: flex; justify-content: center; align-items: center;
-    font-weight: bold; font-size: 1.5rem; color: white;
-    background-color: var(--flip-bg-before, #121213);
-    border: 2px solid #999; backface-visibility: hidden;
+    width: 50px; 
+    height: 50px;
+    position: relative;
+    perspective: 1000px;
     transform-style: preserve-3d;
   }
-  .tile.flipping {
-    animation: flip 0.6s ease-in-out forwards;
+
+  .tile-front,
+  .tile-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    font-size: 1.5rem;
+    color: white;
+    border: 2px solid #999;
+    transition: transform 0.8s ease;
   }
-  .tile.revealed {
-    background-color: var(--flip-bg-after);
+
+  .tile-front {
+    background-color: var(--tile-color, #121213);
+    transform: rotateX(0deg);
   }
-  .tile.correct {
-    --flip-bg-after: #538d4e;
+
+  .tile-back {
+    background-color: #121213;
+    transform: rotateX(180deg);
   }
-  .tile.present {
-    --flip-bg-after: #b59f3b;
+
+  .tile.flipped .tile-front {
+    transform: rotateX(180deg);
   }
-  .tile.absent {
-    --flip-bg-after: #3a3a3c;
+
+  .tile.flipped .tile-back {
+    transform: rotateX(0deg);
   }
+
+  .tile.flipped {
+    animation: flip 0.8s ease forwards;
+    animation-delay: var(--flip-delay, 0ms);
+  }
+
+  @keyframes flip {
+    0% {
+      transform: rotateX(0);
+    }
+    100% {
+      transform: rotateX(180deg);
+    }
+  }
+
   .keyboard {
     margin-top: 1rem;
     display: flex;
@@ -532,7 +578,9 @@
     align-items: center;
     gap: 0.5rem;
   }
+
   .kb-row { display: flex; gap: 6px; }
+
   .kb-key {
     padding: 10px; min-width: 36px;
     border: none; border-radius: 4px;
@@ -541,6 +589,7 @@
     transition: background-color 0.2s ease;
     background-color: #818384;
   }
+
   .kb-key:active { transform: scale(0.95); }
   
   .kb-key.correct {
@@ -577,59 +626,6 @@
     color: black;
   }
 
-  @keyframes flip {
-    0%   { transform: rotateX(0); background-color: var(--flip-bg-before); }
-    50%  { transform: rotateX(90deg); }
-    100% { transform: rotateX(0); background-color: var(--flip-bg-after); }
-  }
-
-  @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-6px); }
-    50% { transform: translateX(6px); }
-    75% { transform: translateX(-6px); }
-  }
-
-  .shake { animation: shake 0.6s ease-in-out; }
-
-  .challenge-btn {
-    margin-top: 1rem;
-    padding: 0.5rem 1rem;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 1rem;
-  }
-
-  .challenge-btn:hover {
-    background-color: #45a049;
-  }
-
-  .game-over {
-    text-align: center;
-    margin: 1rem 0;
-    padding: 1rem;
-    background-color: rgba(0, 0, 0, 0.5);
-    border-radius: 8px;
-  }
-
-  .new-game-btn {
-    padding: 0.75rem 1.5rem;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 1.1rem;
-    transition: background-color 0.2s ease;
-  }
-
-  .new-game-btn:hover {
-    background-color: #45a049;
-  }
-
   .turn-status {
     text-align: center;
     color: white;
@@ -649,5 +645,47 @@
     display: flex;
     justify-content: center;
     margin: 2rem 0;
+  }
+
+  .game-over {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    border-radius: 5px;
+    background-color: #333;
+    color: white;
+    z-index: 1000;
+    text-align: center;
+  }
+
+  .game-over h2 {
+    margin: 0;
+    font-size: 1.2rem;
+  }
+
+  .new-game-btn {
+    padding: 0.75rem 1.5rem;
+    background-color: #538d4e;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: all 0.2s ease;
+    font-weight: bold;
+    min-width: 200px;
+  }
+
+  .new-game-btn:hover {
+    background-color: #4a7d45;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .new-game-btn:active {
+    transform: translateY(0);
+    box-shadow: none;
   }
 </style>
