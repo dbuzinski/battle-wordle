@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   ui:
     build:
       context: .
       dockerfile: ui/Dockerfile
     environment:
-      - VITE_WS_URL=ws://battlewordle.app/ws
+      - VITE_WS_URL=wss://battlewordle.app/ws  # Note: changed to wss:// for secure WebSocket
     networks:
       - battle-wordle-network
     restart: always
@@ -23,8 +21,10 @@ services:
     image: nginx:alpine
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./certbot/conf:/etc/nginx/ssl:ro
     depends_on:
       - ui
       - server
@@ -34,4 +34,4 @@ services:
 
 networks:
   battle-wordle-network:
-    driver: bridge 
+    driver: bridge
