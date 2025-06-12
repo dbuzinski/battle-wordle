@@ -689,8 +689,9 @@
     .kb-key:first-child,
     .kb-key:last-child {
       max-width: 55px;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       padding: 8px 4px;
+      min-width: 45px;
     }
   }
 
@@ -704,9 +705,10 @@
 
     .kb-key:first-child,
     .kb-key:last-child {
-      max-width: 50px;
-      font-size: 0.7rem;
-      padding: 6px 3px;
+      max-width: 45px;
+      font-size: 0.65rem;
+      padding: 6px 2px;
+      min-width: 40px;
     }
   }
 
