@@ -495,6 +495,7 @@
           {#if key === 'enter' || key === 'backspace'}
             <button 
               class="kb-key" 
+              data-key={key}
               on:click={() => handleKeyPress(key)}
             >
               {key === 'enter' ? 'Enter' : '⌫'}
@@ -502,6 +503,7 @@
           {:else}
             <button 
               class="kb-key" 
+              data-key={key}
               class:correct={letterStatuses[key.toUpperCase()] === 'correct'}
               class:present={letterStatuses[key.toUpperCase()] === 'present'}
               class:absent={letterStatuses[key.toUpperCase()] === 'absent'}
@@ -616,63 +618,56 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    padding: 1rem;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    gap: 8px;
     width: 100%;
     max-width: 500px;
     margin-left: auto;
     margin-right: auto;
+    padding: 0 8px;
   }
 
   .kb-row { 
     display: flex; 
     gap: 6px;
-    margin: 0.25rem 0;
-    width: 100%;
     justify-content: center;
+    width: 100%;
   }
 
   .kb-key {
-    padding: 12px;
-    min-width: 40px;
+    padding: 0;
+    min-width: 0;
     border: none;
-    border-radius: 6px;
+    border-radius: 4px;
     font-weight: bold;
     color: white;
     text-transform: uppercase;
     cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: background-color 0.2s ease;
     background-color: #818384;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     user-select: none;
     flex: 1;
-    max-width: 50px;
+    max-width: 43px;
     height: 58px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.2rem;
-    white-space: nowrap;
-    overflow: hidden;
+    font-size: 0.875rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   }
 
   /* Special keys (Enter and Backspace) */
-  .kb-key:first-child,
-  .kb-key:last-child {
+  .kb-key[data-key="enter"],
+  .kb-key[data-key="backspace"] {
     flex: 1.5;
     max-width: 65px;
-    font-size: 0.9rem;
-    padding: 12px 8px;
+    font-size: 0.75rem;
   }
 
   /* Media queries for different screen sizes */
   @media (max-width: 500px) {
     .keyboard {
-      padding: 0.5rem;
-      gap: 0.25rem;
+      gap: 6px;
+      padding: 0 6px;
     }
 
     .kb-row {
@@ -680,61 +675,57 @@
     }
 
     .kb-key {
-      padding: 8px;
-      min-width: 30px;
       height: 50px;
-      font-size: 1rem;
+      font-size: 0.75rem;
     }
 
-    .kb-key:first-child,
-    .kb-key:last-child {
+    .kb-key[data-key="enter"],
+    .kb-key[data-key="backspace"] {
       max-width: 55px;
-      font-size: 0.75rem;
-      padding: 8px 4px;
-      min-width: 45px;
+      font-size: 0.65rem;
     }
   }
 
   @media (max-width: 380px) {
-    .kb-key {
-      padding: 6px;
-      min-width: 25px;
-      height: 45px;
-      font-size: 0.9rem;
+    .keyboard {
+      gap: 4px;
+      padding: 0 4px;
     }
 
-    .kb-key:first-child,
-    .kb-key:last-child {
+    .kb-row {
+      gap: 3px;
+    }
+
+    .kb-key {
+      height: 45px;
+      font-size: 0.7rem;
+    }
+
+    .kb-key[data-key="enter"],
+    .kb-key[data-key="backspace"] {
       max-width: 45px;
-      font-size: 0.65rem;
-      padding: 6px 2px;
-      min-width: 40px;
+      font-size: 0.6rem;
     }
   }
 
   .kb-key:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    opacity: 0.9;
   }
 
   .kb-key:active { 
-    transform: translateY(1px);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    opacity: 0.8;
   }
-  
+
   .kb-key.correct {
     background-color: #538d4e;
-    box-shadow: 0 2px 4px rgba(83, 141, 78, 0.3);
   }
-  
+
   .kb-key.present {
     background-color: #b59f3b;
-    box-shadow: 0 2px 4px rgba(181, 159, 59, 0.3);
   }
-  
+
   .kb-key.absent {
     background-color: #3a3a3c;
-    box-shadow: 0 2px 4px rgba(58, 58, 60, 0.3);
   }
 
   .message {
