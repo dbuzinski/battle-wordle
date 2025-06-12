@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_WS_URL=ws://server:8080/ws
+    depends_on:
+      - server
+    networks:
+      - battle-wordle-network
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "8080:8080"
+    networks:
+      - battle-wordle-network
+
+networks:
+  battle-wordle-network:
+    driver: bridge 
