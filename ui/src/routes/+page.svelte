@@ -534,13 +534,13 @@
   }
 
   .tile {
-    width: 50px; 
-    height: 50px;
+    width: clamp(40px, 10vw, 50px);
+    height: clamp(40px, 10vw, 50px);
     display: flex;
     justify-content: center;
     align-items: center;
     font-weight: bold;
-    font-size: 1.5rem;
+    font-size: clamp(1.2rem, 4vw, 1.5rem);
     color: white;
     border: 2px solid #3a3a3c;
     background-color: #121213;
@@ -621,12 +621,18 @@
     background: rgba(255, 255, 255, 0.05);
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .kb-row { 
     display: flex; 
     gap: 6px;
     margin: 0.25rem 0;
+    width: 100%;
+    justify-content: center;
   }
 
   .kb-key {
@@ -642,6 +648,66 @@
     background-color: #818384;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     user-select: none;
+    flex: 1;
+    max-width: 50px;
+    height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  /* Special keys (Enter and Backspace) */
+  .kb-key:first-child,
+  .kb-key:last-child {
+    flex: 1.5;
+    max-width: 65px;
+    font-size: 0.9rem;
+    padding: 12px 8px;
+  }
+
+  /* Media queries for different screen sizes */
+  @media (max-width: 500px) {
+    .keyboard {
+      padding: 0.5rem;
+      gap: 0.25rem;
+    }
+
+    .kb-row {
+      gap: 4px;
+    }
+
+    .kb-key {
+      padding: 8px;
+      min-width: 30px;
+      height: 50px;
+      font-size: 1rem;
+    }
+
+    .kb-key:first-child,
+    .kb-key:last-child {
+      max-width: 55px;
+      font-size: 0.8rem;
+      padding: 8px 4px;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .kb-key {
+      padding: 6px;
+      min-width: 25px;
+      height: 45px;
+      font-size: 0.9rem;
+    }
+
+    .kb-key:first-child,
+    .kb-key:last-child {
+      max-width: 50px;
+      font-size: 0.7rem;
+      padding: 6px 3px;
+    }
   }
 
   .kb-key:hover {
@@ -682,6 +748,7 @@
     text-align: center;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     animation: slideDown 0.3s ease-out;
+    font-size: clamp(0.9rem, 2.5vw, 1.1rem);
   }
 
   @keyframes slideDown {
@@ -707,7 +774,7 @@
   .turn-status {
     text-align: center;
     color: white;
-    font-size: 1.2em;
+    font-size: clamp(1rem, 3vw, 1.2em);
     margin: 1rem 0;
     padding: 0.75rem;
     background-color: rgba(255, 255, 255, 0.1);
@@ -757,21 +824,21 @@
 
   .game-over h2 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: clamp(1.2rem, 4vw, 1.5rem);
     margin-bottom: 1rem;
   }
 
   .new-game-btn {
-    padding: 1rem 2rem;
+    padding: clamp(0.8rem, 2vw, 1rem) clamp(1.5rem, 4vw, 2rem);
     background-color: #538d4e;
     color: white;
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 1.1rem;
+    font-size: clamp(1rem, 2.5vw, 1.1rem);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     font-weight: bold;
-    min-width: 200px;
+    min-width: clamp(160px, 40vw, 200px);
     box-shadow: 0 4px 12px rgba(83, 141, 78, 0.3);
   }
 
@@ -787,7 +854,7 @@
   }
 
   h1 {
-    font-size: 2.5rem;
+    font-size: clamp(1.8rem, 5vw, 2.5rem);
     margin-bottom: 0.5rem;
     background: linear-gradient(45deg, #538d4e, #b59f3b);
     -webkit-background-clip: text;
@@ -796,7 +863,7 @@
   }
 
   h2 {
-    font-size: 1.2em;
+    font-size: clamp(1rem, 3vw, 1.2em);
     color: #818384;
     margin-top: 0;
   }
