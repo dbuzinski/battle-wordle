@@ -24,8 +24,6 @@
   let isMyTurn = false;
   let isGameOver = false;
   let isSpectator = false;
-  let isJoining = false;
-  let gameResult = null;
   let allGuesses = [];
   let statuses = [];
   let solution = '';
@@ -34,8 +32,6 @@
   let currentLetterIndex = 0;
   let letterStatuses = {};
   let playerIds = [];
-
-  // Add new state for invalid guess
   let isInvalidGuess = false;
   let invalidGuessTimeout;
 
@@ -66,7 +62,7 @@
     if (invalidGuessTimeout) clearTimeout(invalidGuessTimeout);
     invalidGuessTimeout = window.setTimeout(() => {
       isInvalidGuess = false;
-    }, 600); // Match the animation duration
+    }, 600);
   }
 
   function createNewGame() {
@@ -76,7 +72,6 @@
   }
 
   function startNewGame() {
-    // Reset game state
     isGameOver = false;
     isMyTurn = false;
     solution = '';
@@ -86,11 +81,9 @@
     currentGuessIndex = 0;
     currentLetterIndex = 0;
     letterStatuses = {};
-    gameResult = null;
     showMessage = false;
     message = '';
     
-    // Create new game
     createNewGame();
   }
 
@@ -110,18 +103,9 @@
 
     socket.onmessage = (event) => {
       const msg = JSON.parse(event.data);
-      console.log('Received message:', msg);
       
       if (msg.type === 'game_state') {
-        console.log('Processing game state:', {
-          currentPlayer: msg.currentPlayer,
-          playerId: playerId,
-          isGameOver: msg.gameOver,
-          solution: msg.solution ? 'present' : 'missing',
-          guesses: msg.guesses,
-          players: msg.players
-        });
-
+        
         // Update game state
         playerIds = msg.players || [];
         isSpectator = !playerIds.includes(playerId);
@@ -133,7 +117,6 @@
         }
         
         if (msg.guesses) {
-          const oldGuessCount = allGuesses.length;
           allGuesses = msg.guesses;
           
           updateBoard();
@@ -146,12 +129,16 @@
         if (isGameOver) {
           turnStatusMessage = '';
           // Set the appropriate game over message
-          if (msg.loserId === playerId) {
-            message = `You lost! You guessed the word "${msg.solution}"!`;
-            gameResult = 'lost';
-          } else if (msg.loserId) { // Only show won message if there is a loser
-            message = `You won! Your opponent guessed the word "${msg.solution}"!`;
-            gameResult = 'won';
+          if (!msg.players.includes(playerId)) {
+            message = `Game Over!\nThe word is "${msg.solution}"!`;
+          } else {
+            if (msg.loserId === playerId) {
+              message = `You lost!\nThe word is "${msg.solution}"!`;
+            } else if (msg.loserId) {
+              message = `You won!\nThe word is "${msg.solution}"!`;
+            } else {
+              message = `Draw!\nThe word is "${msg.solution}"!`;
+            }
           }
           showMessage = true;
         } else if (isSpectator) {
@@ -163,19 +150,22 @@
           turnStatusMessage = isMyTurn ? "Your turn!" : "Waiting for opponent...";
         }
       } else if (msg.type === 'game_over') {
-        console.log('Game over message received:', msg);
         isGameOver = true;
         isMyTurn = false;
         solution = msg.solution;
         allGuesses = msg.guesses || [];
         updateBoard();
-        
-        if (msg.loserId === playerId) {
-          gameResult = 'lost';
-          message = `You lost! You guessed the word "${msg.solution}"!`;
+       
+        if (!msg.players.includes(playerId)) {
+            message = `Game Over!\nThe word is "${msg.solution}"!`;
         } else {
-          gameResult = 'won';
-          message = `You won! Your opponent guessed the word "${msg.solution}"!`;
+          if (msg.loserId === playerId) {
+            message = `You lost!\nThe word is "${msg.solution}"!`;
+          } else if (msg.loserId) {
+            message = `You won!\nThe word is "${msg.solution}"!`;
+          } else {
+            message = `Draw!\nThe word is "${msg.solution}"!`;
+          }
         }
         showMessage = true;
         turnStatusMessage = ''; // Clear turn status when game is over
@@ -249,11 +239,10 @@
           });
         }
       });
-    }, 600); // Just wait for the last tile to finish (0.6s + 0.2s delay)
+    }, 600);
   }
 
   function initializeBoard() {
-    // Don't animate on initial load
     updateBoard();
   }
 
@@ -347,12 +336,10 @@
   function handleKey(e) {
     // Only handle keyboard input if it's your turn and the game isn't over
     if (isGameOver || isSpectator) {
-      console.log('Game is over or you are a spectator');
       return;
     }
 
     if (!isMyTurn) {
-      console.log('Not your turn');
       return;
     }
 
@@ -367,7 +354,6 @@
         if (!validateGuess(guess)) {
           return;
         }
-        console.log('Submitting guess:', guess);
         socket.send(JSON.stringify({
           type: 'guess',
           from: playerId,
@@ -451,7 +437,7 @@
 <svelte:window on:keydown={handleKey} />
 
 <div class="container">
-  <h1 style="text-align: center; color: white;">Battle Wordle!</h1>
+  <h1 style="text-align: center; color: white;">Battle Wordle</h1>
   <h2 style="text-align: center; color: white; font-size: 1.2em;">Try to avoid guessing the word!</h2>
 
   {#if turnStatusMessage}
