@@ -410,28 +410,6 @@
     if (status === 'absent') return '#3a3a3c';
     return '#121213';
   }
-
-  function getKeyColor(key) {
-    if (key === 'enter' || key === 'backspace') return '#818384';
-    const upperKey = key.toUpperCase();
-    const status = letterStatuses[upperKey] || null;
-    if (status === 'correct') return '#538d4e';
-    if (status === 'present') return '#b59f3b';
-    if (status === 'absent') return '#3a3a3c';
-    return '#818384';
-  }
-
-  function handleJoin() {
-    if (!gameId) {
-      createNewGame();
-    }
-    
-    isJoining = true;
-    socket.send(JSON.stringify({
-      type: 'join',
-      from: playerId
-    }));
-  }
 </script>
 
 <svelte:window on:keydown={handleKey} />
@@ -873,7 +851,6 @@
     animation: shake 0.6s cubic-bezier(.36,.07,.19,.97) both;
   }
 
-  /* Ensure shake animation doesn't interfere with flip */
   .tile.shake.flipped {
     animation: shake 0.6s cubic-bezier(.36,.07,.19,.97) both, flipTile 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
