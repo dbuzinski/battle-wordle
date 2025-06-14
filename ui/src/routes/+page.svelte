@@ -36,6 +36,8 @@
   let invalidGuessTimeout = null;
   let isMenuOpen = false;
   let rematchGameId = '';
+  let isInQueue = false;
+  let queueSocket = null;
 
   // Cookie management
   function getCookie(name) {
@@ -522,6 +524,60 @@
     isMenuOpen = false;
   }
 
+  function findMatch() {
+    if (isInQueue) return;
+    
+    isInQueue = true;
+    closeMenu();
+    
+    // Connect to queue WebSocket
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws`;
+    
+    queueSocket = new WebSocket(wsUrl);
+    
+    queueSocket.onopen = () => {
+        console.log('Queue WebSocket connected');
+        queueSocket.send(JSON.stringify({
+            type: 'queue',
+            from: playerId
+        }));
+    };
+
+    queueSocket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        
+        if (msg.type === 'match_found') {
+            isInQueue = false;
+            gameId = msg.gameId;
+            
+            // Update URL
+            const url = new URL(window.location.href);
+            url.searchParams.set('game', gameId);
+            window.history.pushState({}, '', url);
+            
+            // Close queue socket
+            queueSocket.close();
+            queueSocket = null;
+            
+            // Initialize game socket
+            initializeWebSocket();
+        }
+    };
+
+    queueSocket.onerror = (error) => {
+        console.error('Queue WebSocket error:', error);
+        isInQueue = false;
+        queueSocket = null;
+    };
+
+    queueSocket.onclose = () => {
+        console.log('Queue WebSocket connection closed');
+        isInQueue = false;
+        queueSocket = null;
+    };
+  }
+
   // Initialize game
   onMount(() => {
     if (browser) {
@@ -569,12 +625,29 @@
     aria-label="Game menu"
   >
     <div class="menu-content">
-      <h3>Menu</h3>
-      <button class="menu-item" on:click={startNewGame}>
-        New Game
-      </button>
+      <div class="menu-header">
+        <h3>Menu</h3>
+        <button class="close-menu" on:click={closeMenu} aria-label="Close menu">
+          ×
+        </button>
+      </div>
+      <nav class="menu-nav">
+        <a class="menu-link" on:click={startNewGame}>
+          <span class="menu-text">New Game</span>
+        </a>
+        <a class="menu-link" on:click={findMatch} class:disabled={isInQueue}>
+          <span class="menu-text">{isInQueue ? 'Finding Match...' : 'Find Match'}</span>
+        </a>
+      </nav>
     </div>
   </div>
+
+  {#if isInQueue}
+    <div class="queue-status">
+      <div class="queue-spinner"></div>
+      <p>Finding match...</p>
+    </div>
+  {/if}
 
   <h1 style="text-align: center; color: white;">Battle Wordle</h1>
   <h2 style="text-align: center; color: white; font-size: 1.2em;">Try to avoid guessing the word!</h2>
@@ -1099,6 +1172,7 @@
     box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
     transition: all 0.3s ease;
     z-index: 1000;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .menu-sidebar.open {
@@ -1106,35 +1180,125 @@
   }
 
   .menu-content {
-    padding: 80px 20px 20px;
+    padding: 20px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
   }
 
-  .menu-content h3 {
+  .menu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .menu-header h3 {
     color: white;
-    margin: 0 0 20px;
+    margin: 0;
     font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
   }
 
-  .menu-item {
-    display: block;
-    width: 100%;
-    padding: 12px 20px;
-    background-color: #538d4e;
-    color: white;
+  .close-menu {
+    background: none;
     border: none;
-    border-radius: 8px;
+    color: white;
+    font-size: 24px;
     cursor: pointer;
-    font-size: 1rem;
-    transition: all 0.3s ease;
-    text-align: left;
+    padding: 5px;
+    line-height: 1;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
   }
 
-  .menu-item:hover {
-    background-color: #4a7d45;
+  .close-menu:hover {
+    opacity: 1;
+  }
+
+  .menu-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .menu-link {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    background-color: rgba(255, 255, 255, 0.05);
+    font-size: 1.1rem;
+    letter-spacing: 0.3px;
+  }
+
+  .menu-link:hover {
+    background-color: rgba(255, 255, 255, 0.1);
     transform: translateX(5px);
   }
 
-  .menu-item:active {
+  .menu-link:active {
     transform: translateX(0);
+  }
+
+  .menu-link.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  .menu-link.disabled:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    transform: none;
+  }
+
+  .menu-text {
+    font-weight: 500;
+  }
+
+  .queue-status {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.9);
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    z-index: 1000;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .queue-status p {
+    color: white;
+    margin: 15px 0 0;
+    font-size: 1.2rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+
+  .queue-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #538d4e;
+    border-radius: 50%;
+    margin: 0 auto;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

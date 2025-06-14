@@ -23,6 +23,8 @@ const (
 	GUESS_MSG   = "guess"
 	PLAYER_ID   = "player_id"
 	PLACEHOLDER = "waiting_for_opponent"
+	QUEUE_MSG   = "queue"
+	MATCH_FOUND = "match_found"
 )
 
 type Game struct {
@@ -49,6 +51,7 @@ type Message struct {
 	LoserId       string   `json:"loserId"`
 	Players       []string `json:"players"`
 	RematchGameId string   `json:"rematchGameId"`
+	GameId        string   `json:"gameId"`
 }
 
 // WebSocket connection
@@ -57,8 +60,14 @@ type Client struct {
 	send chan []byte
 }
 
+type QueueEntry struct {
+	PlayerId string
+	Conn     *websocket.Conn
+}
+
 type GameServer struct {
 	games map[string]*Game
+	queue []QueueEntry
 	mutex sync.RWMutex
 }
 
@@ -73,11 +82,6 @@ func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	isRematch := r.URL.Query().Get("rematch") == "true"
 	previousGameId := r.URL.Query().Get("previousGame")
 
-	if gameId == "" {
-		http.Error(w, "Game ID required", http.StatusBadRequest)
-		return
-	}
-
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -90,6 +94,29 @@ func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Error upgrading connection: %v", err)
+		return
+	}
+
+	// If no game ID, this might be a queue request
+	if gameId == "" {
+		defer conn.Close()
+		for {
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				log.Printf("Error reading message: %v", err)
+				break
+			}
+
+			var msg Message
+			if err := json.Unmarshal(message, &msg); err != nil {
+				log.Printf("Error unmarshaling message: %v", err)
+				continue
+			}
+
+			if msg.Type == QUEUE_MSG {
+				s.handleQueue(msg.From, conn)
+			}
+		}
 		return
 	}
 
@@ -364,6 +391,79 @@ func (s *GameServer) broadcastGameState(game *Game) {
 	for id, player := range game.Connections {
 		if err := player.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Printf("Error broadcasting game state to player %s: %v", id, err)
+		}
+	}
+}
+
+func (s *GameServer) handleQueue(playerId string, conn *websocket.Conn) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Check if player is already in queue
+	for _, entry := range s.queue {
+		if entry.PlayerId == playerId {
+			return // Already in queue
+		}
+	}
+
+	// Add player to queue
+	s.queue = append(s.queue, QueueEntry{PlayerId: playerId, Conn: conn})
+	log.Printf("Player %s added to matchmaking queue. Queue length: %d", playerId, len(s.queue))
+
+	// If we have at least 2 players, create a match
+	if len(s.queue) >= 2 {
+		// Get first two players
+		player1 := s.queue[0]
+		player2 := s.queue[1]
+		s.queue = s.queue[2:] // Remove matched players from queue
+
+		// Create new game
+		gameId := uuid.New().String()
+		game := &Game{
+			Id:          gameId,
+			Solution:    getRandomWord(),
+			Connections: make(map[string]*websocket.Conn),
+			Players:     make([]string, 2),
+			Guesses:     make([]string, 0),
+			GameOver:    false,
+		}
+
+		// Randomly assign player order
+		if rand.Intn(2) == 0 {
+			game.Players[0] = player1.PlayerId
+			game.Players[1] = player2.PlayerId
+		} else {
+			game.Players[0] = player2.PlayerId
+			game.Players[1] = player1.PlayerId
+		}
+		game.CurrentPlayer = game.Players[0]
+
+		// Store game
+		s.games[gameId] = game
+
+		// Send match found message to both players
+		matchMsg := Message{
+			Type:     MATCH_FOUND,
+			GameId:   gameId,
+			Players:  game.Players,
+			Solution: game.Solution,
+		}
+
+		data, err := json.Marshal(matchMsg)
+		if err != nil {
+			log.Printf("Error marshaling match found message: %v", err)
+			return
+		}
+
+		log.Printf("Match found! Game ID: %s, Players: %v, First player: %s",
+			gameId, game.Players, game.CurrentPlayer)
+
+		// Send to both players
+		if err := player1.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("Error sending match found message to player %s: %v", player1.PlayerId, err)
+		}
+		if err := player2.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			log.Printf("Error sending match found message to player %s: %v", player2.PlayerId, err)
 		}
 	}
 }
