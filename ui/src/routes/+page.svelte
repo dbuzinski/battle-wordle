@@ -40,13 +40,25 @@
   function setCookie(name, value) {
     const expires = new Date();
     expires.setFullYear(expires.getFullYear() + 1); // Cookie expires in 1 year
-    document.cookie = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
+
+    const cookieString = `${encodeURIComponent(name)}=${encodeURIComponent(value)};` +
+      `path=/;` +
+      `expires=${expires.toUTCString()};` +
+      `SameSite=None;` +
+      `Secure`;
+
+    document.cookie = cookieString;
   }
 
   function getCookie(name) {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop()?.split(';').shift();
+    const nameEQ = `${encodeURIComponent(name)}=`;
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+      while (cookie.charAt(0) === ' ') cookie = cookie.substring(1);
+      if (cookie.indexOf(nameEQ) === 0) {
+        return decodeURIComponent(cookie.substring(nameEQ.length));
+      }
+    }
     return null;
   }
 
