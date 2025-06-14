@@ -155,10 +155,6 @@ func (s *GameServer) handleJoin(game *Game, playerId string, conn *websocket.Con
 	}
 
 	s.sendGameState(game, playerId)
-
-	if len(game.Players) == 2 {
-		s.broadcastGameState(game)
-	}
 }
 
 func (s *GameServer) handleGuess(game *Game, playerId string, guess string) {
@@ -234,8 +230,7 @@ func (s *GameServer) broadcastGameOver(game *Game) {
 	s.games[rematchGameId] = rematchGame
 	s.mutex.Unlock()
 
-	log.Printf("Created rematch game %s with flipped turn order. First player: %s, Second player: %s",
-		rematchGameId, rematchGame.Players[0], rematchGame.Players[1])
+	log.Printf("Created rematch game %s with solution: %s", rematchGameId, rematchGame.Solution)
 
 	msg := Message{
 		Type:          GAME_OVER,
