@@ -1116,6 +1116,7 @@
     height: 2px;
     background-color: white;
     transition: all 0.3s ease;
+    left: 0;
   }
 
   .hamburger::before {
@@ -1127,13 +1128,13 @@
   }
 
   .hamburger.open::before {
-    transform: rotate(45deg);
     top: 50%;
+    transform: translateY(-50%) rotate(45deg);
   }
 
   .hamburger.open::after {
-    transform: rotate(-45deg);
-    bottom: 50%;
+    top: 50%;
+    transform: translateY(-50%) rotate(-45deg);
   }
 
   .menu-overlay {
@@ -1179,18 +1180,13 @@
   }
 
   .menu-header {
-    margin-top: 20px;
+    margin-top: 25px;
     margin-bottom: 30px;
     padding-bottom: 15px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .menu-header h3 {
-    color: white;
-    margin: 0;
-    font-size: 1.5rem;
-    font-weight: 600;
-    letter-spacing: 0.5px;
+    display: none;
   }
 
   .menu-nav {
