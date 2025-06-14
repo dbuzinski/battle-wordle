@@ -170,7 +170,6 @@
     playerIds = msg.players || [];
     isSpectator = !playerIds.includes(playerId);
     isMyTurn = !isSpectator && msg.currentPlayer === playerId;
-    isGameOver = msg.gameOver || false;
     
     if (msg.solution) {
       solution = msg.solution;
@@ -183,11 +182,14 @@
       initializeBoard();
     }
     
-    // Only show game over message if this is the current game and we're not in a rematch
-    const isRematch = $page.url.searchParams.get('rematch') === 'true';
-    if (isGameOver && gameId === msg.gameId && !isRematch) {
-      message = getGameOverMessage(msg);
-      showMessage = true;
+    // Store rematch game ID if available
+    if (msg.rematchGameId) {
+      rematchGameId = msg.rematchGameId;
+    }
+    
+    // Show game over screen if the game is over
+    if (msg.gameOver) {
+      handleGameOver(msg);
     } else {
       showMessage = false;
       message = '';
@@ -202,12 +204,6 @@
     solution = msg.solution;
     allGuesses = msg.guesses || [];
     rematchGameId = msg.rematchGameId;
-    // Store rematch game ID in URL
-    if (rematchGameId) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('rematch', rematchGameId);
-      window.history.replaceState({}, '', url);
-    }
     updateBoard();
     
     const gameOverMessage = getGameOverMessage(msg);
@@ -246,27 +242,25 @@
   }
 
   function startRematch() {
-    // Try to get rematch ID from URL first, then from state
-    const urlRematchId = $page.url.searchParams.get('rematch');
-    const rematchId = urlRematchId || rematchGameId;
-    
-    if (!rematchId) {
+    if (!rematchGameId) {
       console.error('No rematch game ID available');
       return;
     }
     
-    const previousGameId = gameId; // Store the previous game ID
-    gameId = rematchId; // Update gameId to the new rematch game ID
+    const previousGameId = gameId;
+    gameId = rematchGameId;
     
-    // Update URL to remove rematch parameter
+    // Update URL
     const url = new URL(window.location.href);
-    url.searchParams.delete('rematch');
     url.searchParams.set('game', gameId);
+    url.searchParams.set('rematch', 'true');
+    url.searchParams.set('previousGame', previousGameId);
     window.history.pushState({}, '', url);
     
-    // Reset game state before starting rematch
+    // Reset game state
     resetGameState();
     
+    // Connect to rematch game
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
     
@@ -534,13 +528,8 @@
       playerId = getPlayerId();
       
       const urlGameId = $page.url.searchParams.get('game');
-      const urlRematchId = $page.url.searchParams.get('rematch');
-      
       if (urlGameId) {
         gameId = urlGameId;
-        if (urlRematchId) {
-          rematchGameId = urlRematchId;
-        }
         initializeWebSocket();
       } else {
         createNewGame();

@@ -35,6 +35,7 @@ type Game struct {
 	GameOver      bool
 	LoserId       string
 	mutex         sync.Mutex
+	RematchGameId string
 }
 
 type Message struct {
@@ -69,13 +70,13 @@ func NewGameServer() *GameServer {
 
 func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	gameId := r.URL.Query().Get("game")
+	isRematch := r.URL.Query().Get("rematch") == "true"
+	previousGameId := r.URL.Query().Get("previousGame")
+
 	if gameId == "" {
 		http.Error(w, "Game ID required", http.StatusBadRequest)
 		return
 	}
-
-	isRematch := r.URL.Query().Get("rematch") == "true"
-	previousGameId := r.URL.Query().Get("previousGame")
 
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -214,6 +215,27 @@ func (s *GameServer) handleGuess(game *Game, playerId string, guess string) {
 func (s *GameServer) broadcastGameOver(game *Game) {
 	// Generate a new game ID for the rematch
 	rematchGameId := uuid.New().String()
+	game.RematchGameId = rematchGameId
+
+	// Create the rematch game instance
+	s.mutex.Lock()
+	rematchGame := &Game{
+		Id:          rematchGameId,
+		Solution:    getRandomWord(),
+		Connections: make(map[string]*websocket.Conn),
+		Players:     make([]string, 2),
+		Guesses:     make([]string, 0),
+		GameOver:    false,
+	}
+	// Flip the player order for the rematch
+	rematchGame.Players[0] = game.Players[1]
+	rematchGame.Players[1] = game.Players[0]
+	rematchGame.CurrentPlayer = rematchGame.Players[0]
+	s.games[rematchGameId] = rematchGame
+	s.mutex.Unlock()
+
+	log.Printf("Created rematch game %s with flipped turn order. First player: %s, Second player: %s",
+		rematchGameId, rematchGame.Players[0], rematchGame.Players[1])
 
 	msg := Message{
 		Type:          GAME_OVER,
@@ -232,7 +254,7 @@ func (s *GameServer) broadcastGameOver(game *Game) {
 		return
 	}
 
-	log.Printf("Broadcasting game over message: %s", string(data))
+	log.Printf("Broadcasting game over message with rematch game ID: %s", rematchGameId)
 
 	for id, player := range game.Connections {
 		if err := player.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -312,6 +334,7 @@ func (s *GameServer) sendGameState(game *Game, playerId string) {
 		GameOver:      game.GameOver,
 		Players:       game.Players,
 		LoserId:       game.LoserId,
+		RematchGameId: game.RematchGameId,
 	}
 
 	data, err := json.Marshal(msg)
@@ -334,6 +357,7 @@ func (s *GameServer) broadcastGameState(game *Game) {
 		GameOver:      game.GameOver,
 		Players:       game.Players,
 		LoserId:       game.LoserId,
+		RematchGameId: game.RematchGameId,
 	}
 
 	data, err := json.Marshal(msg)
@@ -342,7 +366,6 @@ func (s *GameServer) broadcastGameState(game *Game) {
 		return
 	}
 
-	// Broadcast to all connected users
 	for id, player := range game.Connections {
 		if err := player.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Printf("Error broadcasting game state to player %s: %v", id, err)
