@@ -38,19 +38,35 @@
 
   // Cookie management
   function setCookie(name, value) {
-    const expires = new Date();
-    expires.setFullYear(expires.getFullYear() + 1); // Cookie expires in 1 year
-    document.cookie = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=Lax`;
+    document.cookie = `${name}=${value};path=/`;
   }
 
   function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) {
-      const cookieValue = parts.pop()?.split(';').shift();
-      return cookieValue || null;
-    }
+    if (parts.length === 2) return parts.pop()?.split(';').shift();
     return null;
+  }
+
+  // Player ID management
+  function getPlayerId() {
+    // Try localStorage first
+    const storedId = localStorage.getItem('playerId');
+    if (storedId) return storedId;
+
+    // Fallback to cookie
+    const cookieId = getCookie('playerId');
+    if (cookieId) {
+      // If we found it in cookie but not localStorage, store it in localStorage
+      localStorage.setItem('playerId', cookieId);
+      return cookieId;
+    }
+
+    // Generate new ID if none found
+    const newId = crypto.randomUUID();
+    localStorage.setItem('playerId', newId);
+    setCookie('playerId', newId); // Set cookie as backup
+    return newId;
   }
 
   // UI state
@@ -429,19 +445,10 @@
   // Initialize game
   onMount(() => {
     if (browser) {
-      // Get or create player ID
-      let storedPlayerId = getCookie('playerId');
-      if (!storedPlayerId) {
-        playerId = crypto.randomUUID();
-        setCookie('playerId', playerId);
-      } else {
-        playerId = storedPlayerId;
-      }
-
-      // Get game ID from URL
-      const urlGameId = $page.url.searchParams.get('game');
-      if (urlGameId) {
-        gameId = urlGameId;
+      playerId = getPlayerId();
+      
+      gameId = $page.url.searchParams.get('game');
+      if (gameId) {
         initializeWebSocket();
       } else {
         createNewGame();
