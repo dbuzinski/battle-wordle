@@ -34,6 +34,7 @@
   let playerIds = [];
   let isInvalidGuess = false;
   let invalidGuessTimeout = null;
+  let isMenuOpen = false;
 
   // Cookie management
   function setCookie(name, value) {
@@ -354,7 +355,7 @@
 
   // Input handling
   function handleKey(e) {
-    if (isGameOver || isSpectator || !isMyTurn) return;
+    if (isGameOver || isSpectator || !isMyTurn || isMenuOpen) return;
 
     const key = e.key.toLowerCase();
 
@@ -399,6 +400,7 @@
   }
 
   function handleKeyPress(key) {
+    if (isMenuOpen) return;
     handleKey({ key, preventDefault: () => {} });
   }
 
@@ -409,6 +411,14 @@
     if (status === 'present') return '#b59f3b';
     if (status === 'absent') return '#3a3a3c';
     return '#121213';
+  }
+
+  function toggleMenu() {
+    isMenuOpen = !isMenuOpen;
+  }
+
+  function closeMenu() {
+    isMenuOpen = false;
   }
 
   // Initialize game
@@ -432,6 +442,21 @@
 <svelte:window on:keydown={handleKey} />
 
 <div class="container">
+  <div class="menu-icon" on:click={toggleMenu}>
+    <div class="hamburger" class:open={isMenuOpen}></div>
+  </div>
+
+  <div class="menu-overlay" class:open={isMenuOpen} on:click={closeMenu}></div>
+  
+  <div class="menu-sidebar" class:open={isMenuOpen}>
+    <div class="menu-content">
+      <h3>Menu</h3>
+      <button class="menu-item" on:click={startNewGame}>
+        New Game
+      </button>
+    </div>
+  </div>
+
   <h1 style="text-align: center; color: white;">Battle Wordle</h1>
   <h2 style="text-align: center; color: white; font-size: 1.2em;">Try to avoid guessing the word!</h2>
 
@@ -497,10 +522,6 @@
         {/each}
       </div>
     {/each}
-  </div>
-
-  <div class="game-controls">
-    <button class="new-game-btn" on:click={startNewGame} type="button">New Game</button>
   </div>
 </div>
 
@@ -765,10 +786,7 @@
   }
 
   .game-controls {
-    display: flex;
-    justify-content: center;
-    margin: 2rem 0;
-    gap: 1rem;
+    display: none;
   }
 
   .game-over {
@@ -866,5 +884,116 @@
 
   .tile.shake.flipped {
     animation: shake 0.6s cubic-bezier(.36,.07,.19,.97) both, flipTile 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .menu-icon {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    width: 30px;
+    height: 30px;
+    cursor: pointer;
+    z-index: 1001;
+  }
+
+  .hamburger {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hamburger::before,
+  .hamburger::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 2px;
+    background-color: white;
+    transition: all 0.3s ease;
+  }
+
+  .hamburger::before {
+    top: 25%;
+  }
+
+  .hamburger::after {
+    bottom: 25%;
+  }
+
+  .hamburger.open::before {
+    transform: rotate(45deg);
+    top: 50%;
+  }
+
+  .hamburger.open::after {
+    transform: rotate(-45deg);
+    bottom: 50%;
+  }
+
+  .menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    z-index: 999;
+  }
+
+  .menu-overlay.open {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .menu-sidebar {
+    position: fixed;
+    top: 0;
+    left: -300px;
+    width: 300px;
+    height: 100%;
+    background-color: #1a1a1a;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease;
+    z-index: 1000;
+  }
+
+  .menu-sidebar.open {
+    left: 0;
+  }
+
+  .menu-content {
+    padding: 80px 20px 20px;
+  }
+
+  .menu-content h3 {
+    color: white;
+    margin: 0 0 20px;
+    font-size: 1.5rem;
+  }
+
+  .menu-item {
+    display: block;
+    width: 100%;
+    padding: 12px 20px;
+    background-color: #538d4e;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    text-align: left;
+  }
+
+  .menu-item:hover {
+    background-color: #4a7d45;
+    transform: translateX(5px);
+  }
+
+  .menu-item:active {
+    transform: translateX(0);
   }
 </style>
