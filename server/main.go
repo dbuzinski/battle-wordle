@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -46,6 +47,7 @@ type Message struct {
 	GameOver      bool     `json:"gameOver"`
 	LoserId       string   `json:"loserId"`
 	Players       []string `json:"players"`
+	RematchGameId string   `json:"rematchGameId"`
 }
 
 // WebSocket connection
@@ -73,6 +75,7 @@ func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	isRematch := r.URL.Query().Get("rematch") == "true"
+	previousGameId := r.URL.Query().Get("previousGame")
 
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
@@ -89,7 +92,7 @@ func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	game := s.getOrCreateGame(gameId, isRematch)
+	game := s.getOrCreateGame(gameId, isRematch, previousGameId)
 	log.Printf("Player connecting to game: %s", gameId)
 
 	defer func() {
@@ -209,6 +212,9 @@ func (s *GameServer) handleGuess(game *Game, playerId string, guess string) {
 }
 
 func (s *GameServer) broadcastGameOver(game *Game) {
+	// Generate a new game ID for the rematch
+	rematchGameId := uuid.New().String()
+
 	msg := Message{
 		Type:          GAME_OVER,
 		Players:       game.Players,
@@ -217,6 +223,7 @@ func (s *GameServer) broadcastGameOver(game *Game) {
 		LoserId:       game.LoserId,
 		GameOver:      true,
 		CurrentPlayer: game.CurrentPlayer,
+		RematchGameId: rematchGameId,
 	}
 
 	data, err := json.Marshal(msg)
@@ -266,7 +273,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func (s *GameServer) getOrCreateGame(gameId string, isRematch bool) *Game {
+func (s *GameServer) getOrCreateGame(gameId string, isRematch bool, previousGameId string) *Game {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -280,19 +287,18 @@ func (s *GameServer) getOrCreateGame(gameId string, isRematch bool) *Game {
 			Guesses:     make([]string, 0),
 			GameOver:    false,
 		}
+		if isRematch && previousGameId != "" {
+			if prevGame, ok := s.games[previousGameId]; ok && len(prevGame.Players) == 2 {
+				game.Players = make([]string, 2)
+				game.Players[0] = prevGame.Players[1]
+				game.Players[1] = prevGame.Players[0]
+				game.CurrentPlayer = game.Players[0]
+				log.Printf("Rematch started for game %s with flipped turn order from game %s. First player: %s, Second player: %s",
+					gameId, previousGameId, game.Players[0], game.Players[1])
+			}
+		}
 		s.games[gameId] = game
 		log.Printf("New game created with ID: %s, solution: %s", gameId, game.Solution)
-	} else if isRematch {
-		// For rematch, keep the same players but flip the turn order
-		if len(game.Players) == 2 {
-			game.Players[0], game.Players[1] = game.Players[1], game.Players[0]
-			game.CurrentPlayer = game.Players[0]
-			game.Solution = getRandomWord()
-			game.Guesses = make([]string, 0)
-			game.GameOver = false
-			game.LoserId = ""
-			log.Printf("Rematch started for game %s with flipped turn order", gameId)
-		}
 	}
 	return game
 }

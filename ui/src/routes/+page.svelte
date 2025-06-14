@@ -35,6 +35,7 @@
   let isInvalidGuess = false;
   let invalidGuessTimeout = null;
   let isMenuOpen = false;
+  let rematchGameId = '';
 
   // Cookie management
   function getCookie(name) {
@@ -182,8 +183,9 @@
       initializeBoard();
     }
     
-    // Show game over message if the game is over
-    if (isGameOver) {
+    // Only show game over message if this is the current game and we're not in a rematch
+    const isRematch = $page.url.searchParams.get('rematch') === 'true';
+    if (isGameOver && gameId === msg.gameId && !isRematch) {
       message = getGameOverMessage(msg);
       showMessage = true;
     } else {
@@ -199,6 +201,13 @@
     isMyTurn = false;
     solution = msg.solution;
     allGuesses = msg.guesses || [];
+    rematchGameId = msg.rematchGameId;
+    // Store rematch game ID in URL
+    if (rematchGameId) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('rematch', rematchGameId);
+      window.history.replaceState({}, '', url);
+    }
     updateBoard();
     
     const gameOverMessage = getGameOverMessage(msg);
@@ -237,8 +246,29 @@
   }
 
   function startRematch() {
+    // Try to get rematch ID from URL first, then from state
+    const urlRematchId = $page.url.searchParams.get('rematch');
+    const rematchId = urlRematchId || rematchGameId;
+    
+    if (!rematchId) {
+      console.error('No rematch game ID available');
+      return;
+    }
+    
+    const previousGameId = gameId; // Store the previous game ID
+    gameId = rematchId; // Update gameId to the new rematch game ID
+    
+    // Update URL to remove rematch parameter
+    const url = new URL(window.location.href);
+    url.searchParams.delete('rematch');
+    url.searchParams.set('game', gameId);
+    window.history.pushState({}, '', url);
+    
+    // Reset game state before starting rematch
+    resetGameState();
+    
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}&rematch=true`;
+    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
     
     socket = new WebSocket(wsUrl);
     
@@ -503,8 +533,14 @@
     if (browser) {
       playerId = getPlayerId();
       
-      gameId = $page.url.searchParams.get('game');
-      if (gameId) {
+      const urlGameId = $page.url.searchParams.get('game');
+      const urlRematchId = $page.url.searchParams.get('rematch');
+      
+      if (urlGameId) {
+        gameId = urlGameId;
+        if (urlRematchId) {
+          rematchGameId = urlRematchId;
+        }
         initializeWebSocket();
       } else {
         createNewGame();
@@ -516,13 +552,33 @@
 <svelte:window on:keydown={handleKey} />
 
 <div class="container">
-  <div class="menu-icon" on:click={toggleMenu}>
+  <button 
+    class="menu-icon" 
+    on:click={toggleMenu}
+    on:keydown={e => e.key === 'Enter' && toggleMenu()}
+    aria-label="Toggle menu"
+    aria-expanded={isMenuOpen}
+    aria-controls="menu-sidebar"
+  >
     <div class="hamburger" class:open={isMenuOpen}></div>
-  </div>
+  </button>
 
-  <div class="menu-overlay" class:open={isMenuOpen} on:click={closeMenu}></div>
+  <div 
+    class="menu-overlay" 
+    class:open={isMenuOpen} 
+    on:click={closeMenu}
+    on:keydown={e => e.key === 'Escape' && closeMenu()}
+    role="presentation"
+    aria-hidden={!isMenuOpen}
+  ></div>
   
-  <div class="menu-sidebar" class:open={isMenuOpen}>
+  <div 
+    class="menu-sidebar" 
+    class:open={isMenuOpen}
+    id="menu-sidebar"
+    role="navigation"
+    aria-label="Game menu"
+  >
     <div class="menu-content">
       <h3>Menu</h3>
       <button class="menu-item" on:click={startNewGame}>
@@ -869,10 +925,6 @@
     font-style: italic;
   }
 
-  .game-controls {
-    display: none;
-  }
-
   .game-over {
     position: fixed;
     top: 50%;
@@ -985,6 +1037,15 @@
     height: 30px;
     cursor: pointer;
     z-index: 1001;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .menu-icon:focus {
+    outline: 2px solid #538d4e;
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 
   .hamburger {
