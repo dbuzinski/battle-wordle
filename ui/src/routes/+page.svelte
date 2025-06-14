@@ -38,24 +38,54 @@
 
   // Cookie management
   function getCookie(name) {
+    console.log(`[getCookie] Looking for cookie "${name}"`);
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop()?.split(';').shift();
+    if (parts.length === 2) {
+      const cookieValue = parts.pop().split(';').shift();
+      console.log(`[getCookie] Found cookie "${name}" with value:`, cookieValue);
+      return cookieValue;
+    }
+    console.log(`[getCookie] Cookie "${name}" not found`);
     return null;
   }
 
   function setCookie(name, value) {
     const expires = new Date();
-    expires.setFullYear(expires.getFullYear() + 1); // 1-year expiry
-    document.cookie = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
+    expires.setFullYear(expires.getFullYear() + 1);
+    const cookieString = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
+    console.log(`[setCookie] Setting cookie:`, cookieString);
+    document.cookie = cookieString;
+
+    // Check immediately if cookie was set
+    const checkValue = getCookie(name);
+    if (checkValue === value) {
+      console.log(`[setCookie] Cookie "${name}" successfully set.`);
+    } else {
+      console.warn(`[setCookie] Failed to set cookie "${name}". Current value:`, checkValue);
+    }
   }
 
   function getPlayerId() {
+    console.log('[getPlayerId] Start');
     const existingId = getCookie('playerId');
-    if (existingId) return existingId;
+    if (existingId) {
+      console.log('[getPlayerId] Returning existing playerId:', existingId);
+      return existingId;
+    }
 
     const newId = crypto.randomUUID();
+    console.log('[getPlayerId] No playerId found, generating new one:', newId);
     setCookie('playerId', newId);
+
+    // Confirm it’s set
+    const confirmId = getCookie('playerId');
+    if (confirmId === newId) {
+      console.log('[getPlayerId] New playerId successfully stored in cookie:', confirmId);
+    } else {
+      console.warn('[getPlayerId] Failed to store new playerId in cookie. Found:', confirmId);
+    }
+
     return newId;
   }
 
