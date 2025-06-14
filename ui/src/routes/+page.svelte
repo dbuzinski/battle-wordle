@@ -140,6 +140,12 @@
       initializeBoard();
     }
     
+    // If the game is over, show the game over message
+    if (isGameOver) {
+      message = getGameOverMessage(msg);
+      showMessage = true;
+    }
+    
     updateTurnStatus(msg);
   }
 
