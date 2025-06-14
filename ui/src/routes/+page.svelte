@@ -38,7 +38,9 @@
 
   // Cookie management
   function setCookie(name, value) {
-    document.cookie = `${name}=${value};path=/`;
+    const expires = new Date();
+    expires.setFullYear(expires.getFullYear() + 1); // Cookie expires in 1 year
+    document.cookie = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
   }
 
   function getCookie(name) {
@@ -51,20 +53,31 @@
   // Player ID management
   function getPlayerId() {
     // Try localStorage first
-    const storedId = localStorage.getItem('playerId');
-    if (storedId) return storedId;
+    try {
+      const storedId = localStorage.getItem('playerId');
+      if (storedId) return storedId;
+    } catch (e) {
+      console.warn('localStorage not available:', e);
+    }
 
     // Fallback to cookie
     const cookieId = getCookie('playerId');
     if (cookieId) {
-      // If we found it in cookie but not localStorage, store it in localStorage
-      localStorage.setItem('playerId', cookieId);
+      try {
+        localStorage.setItem('playerId', cookieId);
+      } catch (e) {
+        console.warn('Could not store in localStorage:', e);
+      }
       return cookieId;
     }
 
     // Generate new ID if none found
     const newId = crypto.randomUUID();
-    localStorage.setItem('playerId', newId);
+    try {
+      localStorage.setItem('playerId', newId);
+    } catch (e) {
+      console.warn('Could not store in localStorage:', e);
+    }
     setCookie('playerId', newId); // Set cookie as backup
     return newId;
   }
