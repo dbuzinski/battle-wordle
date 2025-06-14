@@ -14,13 +14,13 @@
   ];
 
   // Game state
-  let gameId;
-  let socket;
-  let playerId;
+  let gameId = '';
+  let socket = null;
+  let playerId = '';
   let showMessage = false;
   let message = '';
   let turnStatusMessage = '';
-  let messageTimeout;
+  let messageTimeout = null;
   let isMyTurn = false;
   let isGameOver = false;
   let isSpectator = false;
@@ -33,7 +33,7 @@
   let letterStatuses = {};
   let playerIds = [];
   let isInvalidGuess = false;
-  let invalidGuessTimeout;
+  let invalidGuessTimeout = null;
 
   // Cookie management
   function setCookie(name, value) {
@@ -71,7 +71,7 @@
     initializeWebSocket();
   }
 
-  function startNewGame() {
+  function resetGameState() {
     isGameOver = false;
     isMyTurn = false;
     solution = '';
@@ -83,7 +83,10 @@
     letterStatuses = {};
     showMessage = false;
     message = '';
-    
+  }
+
+  function startNewGame() {
+    resetGameState();
     createNewGame();
   }
 
@@ -105,70 +108,9 @@
       const msg = JSON.parse(event.data);
       
       if (msg.type === 'game_state') {
-        
-        // Update game state
-        playerIds = msg.players || [];
-        isSpectator = !playerIds.includes(playerId);
-        isMyTurn = !isSpectator && msg.currentPlayer === playerId;
-        isGameOver = msg.gameOver || false;
-        
-        if (msg.solution) {
-          solution = msg.solution;
-        }
-        
-        if (msg.guesses) {
-          allGuesses = msg.guesses;
-          
-          updateBoard();
-        } else {
-          // If this is the initial state, don't animate
-          initializeBoard();
-        }
-        
-        // Update turn status message
-        if (isGameOver) {
-          turnStatusMessage = '';
-          // Set the appropriate game over message
-          if (!msg.players.includes(playerId)) {
-            message = `Game Over!\nThe word is "${msg.solution}"!`;
-          } else {
-            if (msg.loserId === playerId) {
-              message = `You lost!\nThe word is "${msg.solution}"!`;
-            } else if (msg.loserId) {
-              message = `You won!\nThe word is "${msg.solution}"!`;
-            } else {
-              message = `Draw!\nThe word is "${msg.solution}"!`;
-            }
-          }
-          showMessage = true;
-        } else if (isSpectator) {
-          turnStatusMessage = "You are spectating this game";
-        } else if (msg.currentPlayer === 'waiting_for_opponent') {
-          turnStatusMessage = "Waiting for opponent to join...";
-          isMyTurn = false;
-        } else {
-          turnStatusMessage = isMyTurn ? "Your turn!" : "Waiting for opponent...";
-        }
+        handleGameState(msg);
       } else if (msg.type === 'game_over') {
-        isGameOver = true;
-        isMyTurn = false;
-        solution = msg.solution;
-        allGuesses = msg.guesses || [];
-        updateBoard();
-       
-        if (!msg.players.includes(playerId)) {
-            message = `Game Over!\nThe word is "${msg.solution}"!`;
-        } else {
-          if (msg.loserId === playerId) {
-            message = `You lost!\nThe word is "${msg.solution}"!`;
-          } else if (msg.loserId) {
-            message = `You won!\nThe word is "${msg.solution}"!`;
-          } else {
-            message = `Draw!\nThe word is "${msg.solution}"!`;
-          }
-        }
-        showMessage = true;
-        turnStatusMessage = ''; // Clear turn status when game is over
+        handleGameOver(msg);
       }
     };
 
@@ -179,6 +121,68 @@
     socket.onclose = () => {
       console.log('WebSocket connection closed');
     };
+  }
+
+  function handleGameState(msg) {
+    playerIds = msg.players || [];
+    isSpectator = !playerIds.includes(playerId);
+    isMyTurn = !isSpectator && msg.currentPlayer === playerId;
+    isGameOver = msg.gameOver || false;
+    
+    if (msg.solution) {
+      solution = msg.solution;
+    }
+    
+    if (msg.guesses) {
+      allGuesses = msg.guesses;
+      updateBoard();
+    } else {
+      initializeBoard();
+    }
+    
+    updateTurnStatus(msg);
+  }
+
+  function handleGameOver(msg) {
+    isGameOver = true;
+    isMyTurn = false;
+    solution = msg.solution;
+    allGuesses = msg.guesses || [];
+    updateBoard();
+    
+    const gameOverMessage = getGameOverMessage(msg);
+    message = gameOverMessage;
+    showMessage = true;
+    turnStatusMessage = '';
+  }
+
+  function getGameOverMessage(msg) {
+    if (!msg.players.includes(playerId)) {
+      return `Game Over!\nThe word is "${msg.solution}"!`;
+    }
+    
+    if (msg.loserId === playerId) {
+      return `You lost!\nThe word is "${msg.solution}"!`;
+    }
+    
+    if (msg.loserId) {
+      return `You won!\nThe word is "${msg.solution}"!`;
+    }
+    
+    return `Draw!\nThe word is "${msg.solution}"!`;
+  }
+
+  function updateTurnStatus(msg) {
+    if (isGameOver) {
+      turnStatusMessage = '';
+    } else if (isSpectator) {
+      turnStatusMessage = "You are spectating this game";
+    } else if (msg.currentPlayer === 'waiting_for_opponent') {
+      turnStatusMessage = "Waiting for opponent to join...";
+      isMyTurn = false;
+    } else {
+      turnStatusMessage = isMyTurn ? "Your turn!" : "Waiting for opponent...";
+    }
   }
 
   // Game logic
@@ -211,12 +215,10 @@
   }
 
   function updateBoard() {
-    // Reset the board
     guesses = Array(MAX_GUESSES).fill(null).map(() => Array(WORD_LENGTH).fill(''));
     statuses = [];
     letterStatuses = {};
     
-    // Update the board with all guesses
     allGuesses.forEach((guess, index) => {
       if (index < MAX_GUESSES) {
         guesses[index] = guess.split('');
@@ -255,7 +257,15 @@
       return false;
     }
     
-    // First check if correct letters are in their correct positions
+    if (!validateCorrectLetters(guessArray)) return false;
+    if (!validatePresentLetters(guessArray)) return false;
+    if (!validateRequiredLetters(guessArray)) return false;
+    if (!validateAbsentLetters(guessArray)) return false;
+
+    return true;
+  }
+
+  function validateCorrectLetters(guessArray) {
     for (let prevGuessIndex = 0; prevGuessIndex < allGuesses.length; prevGuessIndex++) {
       const prevGuess = allGuesses[prevGuessIndex];
       const prevStatuses = statuses[prevGuessIndex];
@@ -271,8 +281,10 @@
         }
       }
     }
-    
-    // Check if any letter is used in a position where it was previously marked as present
+    return true;
+  }
+
+  function validatePresentLetters(guessArray) {
     for (let i = 0; i < guessArray.length; i++) {
       const letter = guessArray[i].toUpperCase();
       
@@ -287,8 +299,10 @@
         }
       }
     }
-    
-    // Collect all required letters (correct and present)
+    return true;
+  }
+
+  function validateRequiredLetters(guessArray) {
     const requiredLetters = new Set();
     for (let prevGuessIndex = 0; prevGuessIndex < allGuesses.length; prevGuessIndex++) {
       const prevGuess = allGuesses[prevGuessIndex];
@@ -301,7 +315,6 @@
       }
     }
     
-    // Check if all required letters are used
     const usedLetters = new Set(guessArray.map(l => l.toUpperCase()));
     for (const requiredLetter of requiredLetters) {
       if (!usedLetters.has(requiredLetter)) {
@@ -310,8 +323,10 @@
         return false;
       }
     }
-    
-    // Check each letter against previous guesses
+    return true;
+  }
+
+  function validateAbsentLetters(guessArray) {
     for (let i = 0; i < guessArray.length; i++) {
       const letter = guessArray[i].toUpperCase();
       if (letterStatuses[letter] === 'absent') {
@@ -320,7 +335,6 @@
         return false;
       }
     }
-
     return true;
   }
 
@@ -334,73 +348,53 @@
 
   // Input handling
   function handleKey(e) {
-    // Only handle keyboard input if it's your turn and the game isn't over
-    if (isGameOver || isSpectator) {
-      return;
-    }
-
-    if (!isMyTurn) {
-      return;
-    }
+    if (isGameOver || isSpectator || !isMyTurn) return;
 
     const key = e.key.toLowerCase();
 
     if (key === 'enter') {
-      // Prevent the default Enter key behavior
       e.preventDefault();
-      
-      const guess = guesses[currentGuessIndex].join('');
-      if (guess.length === WORD_LENGTH) {
-        if (!validateGuess(guess)) {
-          return;
-        }
-        socket.send(JSON.stringify({
-          type: 'guess',
-          from: playerId,
-          guess: guess
-        }));
-        // Clear the current guess
-        guesses[currentGuessIndex] = Array(WORD_LENGTH).fill('');
-        currentLetterIndex = 0;
-      }
+      handleEnterKey();
     } else if (key === 'backspace') {
-      if (currentLetterIndex > 0) {
-        currentLetterIndex--;
-        guesses[currentGuessIndex][currentLetterIndex] = '';
-      }
+      handleBackspaceKey();
     } else if (/^[a-z]$/.test(key)) {
-      if (currentLetterIndex < WORD_LENGTH) {
-        guesses[currentGuessIndex][currentLetterIndex] = key;
-        currentLetterIndex++;
-      }
+      handleLetterKey(key);
+    }
+  }
+
+  function handleEnterKey() {
+    const guess = guesses[currentGuessIndex].join('');
+    if (guess.length === WORD_LENGTH) {
+      if (!validateGuess(guess)) return;
+      
+      socket.send(JSON.stringify({
+        type: 'guess',
+        from: playerId,
+        guess: guess
+      }));
+      
+      guesses[currentGuessIndex] = Array(WORD_LENGTH).fill('');
+      currentLetterIndex = 0;
+    }
+  }
+
+  function handleBackspaceKey() {
+    if (currentLetterIndex > 0) {
+      currentLetterIndex--;
+      guesses[currentGuessIndex][currentLetterIndex] = '';
+    }
+  }
+
+  function handleLetterKey(key) {
+    if (currentLetterIndex < WORD_LENGTH) {
+      guesses[currentGuessIndex][currentLetterIndex] = key;
+      currentLetterIndex++;
     }
   }
 
   function handleKeyPress(key) {
     handleKey({ key, preventDefault: () => {} });
   }
-
-  // WebSocket handling
-  onMount(() => {
-    if (browser) {
-      // Get or create player ID - this is a persistent identity
-      playerId = getCookie('playerId');
-      if (!playerId) {
-        playerId = crypto.randomUUID();
-        setCookie('playerId', playerId);
-      }
-
-      // Get game ID from URL - this is specific to the current game
-      gameId = $page.url.searchParams.get('game');
-      if (gameId) {
-        // If we have a game ID, connect to that game
-        initializeWebSocket();
-      } else {
-        // If no game ID, create a new game
-        createNewGame();
-      }
-    }
-  });
 
   // UI helpers
   function getTileColor(row, col) {
@@ -410,6 +404,23 @@
     if (status === 'absent') return '#3a3a3c';
     return '#121213';
   }
+
+  // Initialize game
+  onMount(() => {
+    if (browser) {
+      playerId = getCookie('playerId') || crypto.randomUUID();
+      if (!playerId) {
+        setCookie('playerId', playerId);
+      }
+
+      gameId = $page.url.searchParams.get('game');
+      if (gameId) {
+        initializeWebSocket();
+      } else {
+        createNewGame();
+      }
+    }
+  });
 </script>
 
 <svelte:window on:keydown={handleKey} />
