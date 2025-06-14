@@ -98,48 +98,44 @@ func NewGameServer() *GameServer {
 }
 
 func createTables(db *sql.DB) {
-	// Create players table with index and name column
+	// Create players table
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS players (
 			id TEXT PRIMARY KEY,
-			name TEXT,
+			name TEXT NOT NULL,
 			wins INTEGER DEFAULT 0,
 			losses INTEGER DEFAULT 0,
-			draws INTEGER DEFAULT 0,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE INDEX IF NOT EXISTS idx_players_id ON players(id);
+			draws INTEGER DEFAULT 0
+		)
 	`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Create games table with index
+	// Create games table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS games (
 			id TEXT PRIMARY KEY,
 			solution TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			loser_id TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			current_player TEXT,
 			FOREIGN KEY (loser_id) REFERENCES players(id)
-		);
-		CREATE INDEX IF NOT EXISTS idx_games_loser_id ON games(loser_id);
+		)
 	`)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Create game_players table with indexes
+	// Create game_players table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS game_players (
 			game_id TEXT,
 			player_id TEXT,
+			PRIMARY KEY (game_id, player_id),
 			FOREIGN KEY (game_id) REFERENCES games(id),
-			FOREIGN KEY (player_id) REFERENCES players(id),
-			PRIMARY KEY (game_id, player_id)
-		);
-		CREATE INDEX IF NOT EXISTS idx_game_players_game_id ON game_players(game_id);
-		CREATE INDEX IF NOT EXISTS idx_game_players_player_id ON game_players(player_id);
+			FOREIGN KEY (player_id) REFERENCES players(id)
+		)
 	`)
 	if err != nil {
 		log.Fatal(err)
@@ -147,45 +143,73 @@ func createTables(db *sql.DB) {
 }
 
 func (s *GameServer) recordGame(gameId string, solution string, loserId string, playerIds []string) error {
-	// Use a single transaction for all operations
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	// Start a transaction
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	// Insert game and game players in a single transaction
+	// Insert the game
 	_, err = tx.Exec(`
-		INSERT INTO games (id, solution, loser_id) VALUES (?, ?, ?);
-		INSERT OR IGNORE INTO players (id) VALUES (?), (?);
-		INSERT INTO game_players (game_id, player_id) VALUES (?, ?), (?, ?);
-		UPDATE players SET 
-			wins = CASE 
-				WHEN ? = '' THEN wins + 1 
-				WHEN id = ? THEN wins + 1 
-				ELSE wins 
-			END,
-			losses = CASE 
-				WHEN ? = '' THEN losses + 1 
-				WHEN id = ? THEN losses + 1 
-				ELSE losses 
-			END,
-			draws = CASE 
-				WHEN ? = '' THEN draws + 1 
-				ELSE draws 
-			END
-		WHERE id IN (?, ?)
-	`,
-		gameId, solution, loserId,
-		playerIds[0], playerIds[1],
-		gameId, playerIds[0], gameId, playerIds[1],
-		loserId, playerIds[0],
-		loserId, playerIds[1],
-		loserId,
-		playerIds[0], playerIds[1])
-
+		INSERT INTO games (id, solution, loser_id, current_player)
+		VALUES (?, ?, ?, ?)
+	`, gameId, solution, loserId, playerIds[0])
 	if err != nil {
 		return err
+	}
+
+	// Insert player associations
+	for _, playerId := range playerIds {
+		_, err = tx.Exec(`
+			INSERT INTO game_players (game_id, player_id)
+			VALUES (?, ?)
+		`, gameId, playerId)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Update player stats if there's a loser
+	if loserId != "" {
+		// Update loser's losses
+		_, err = tx.Exec(`
+			UPDATE players
+			SET losses = losses + 1
+			WHERE id = ?
+		`, loserId)
+		if err != nil {
+			return err
+		}
+
+		// Update winner's wins
+		winnerId := playerIds[0]
+		if winnerId == loserId {
+			winnerId = playerIds[1]
+		}
+		_, err = tx.Exec(`
+			UPDATE players
+			SET wins = wins + 1
+			WHERE id = ?
+		`, winnerId)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Update draws for both players
+		for _, playerId := range playerIds {
+			_, err = tx.Exec(`
+				UPDATE players
+				SET draws = draws + 1
+				WHERE id = ?
+			`, playerId)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	return tx.Commit()
@@ -800,67 +824,99 @@ func (s *GameServer) handleSetPlayerName(w http.ResponseWriter, r *http.Request)
 
 // Recent games endpoint
 func (s *GameServer) handleRecentGames(w http.ResponseWriter, r *http.Request) {
+	// Add CORS headers
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight requests
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	playerId := r.URL.Query().Get("playerId")
 	if playerId == "" {
 		http.Error(w, "Player ID is required", http.StatusBadRequest)
 		return
 	}
+
+	log.Printf("Fetching recent games for player: %s", playerId)
+
+	// Get all games for the player with opponent names and game status
 	rows, err := s.db.Query(`
-		SELECT g.id, g.created_at, g.loser_id, gp2.player_id as opponent_id, p2.name as opponent_name
-		FROM games g
-		JOIN game_players gp1 ON g.id = gp1.game_id AND gp1.player_id = ?
-		JOIN game_players gp2 ON g.id = gp2.game_id AND gp2.player_id != ?
-		LEFT JOIN players p2 ON gp2.player_id = p2.id
-		ORDER BY g.created_at DESC
-		LIMIT 10
+		WITH player_games AS (
+			SELECT g.id, g.created_at, g.loser_id, g.current_player, gp2.player_id as opponent_id
+			FROM games g
+			JOIN game_players gp1 ON g.id = gp1.game_id AND gp1.player_id = ?
+			JOIN game_players gp2 ON g.id = gp2.game_id AND gp2.player_id != ?
+		)
+		SELECT 
+			pg.id,
+			pg.created_at,
+			pg.loser_id,
+			pg.current_player,
+			COALESCE(p.name, 'Player') as opponent_name,
+			pg.opponent_id
+		FROM player_games pg
+		LEFT JOIN players p ON pg.opponent_id = p.id
+		ORDER BY pg.created_at DESC
+		LIMIT 50
 	`, playerId, playerId)
 	if err != nil {
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		log.Printf("Error querying recent games: %v", err)
+		http.Error(w, "Error fetching recent games", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
+
 	type GameRow struct {
-		Id           string `json:"id"`
-		CreatedAt    string `json:"date"`
-		LoserId      string `json:"loserId"`
-		OpponentId   string `json:"opponentId"`
-		OpponentName string `json:"opponentName"`
+		Id            string `json:"id"`
+		CreatedAt     string `json:"date"`
+		LoserId       string `json:"loserId"`
+		CurrentPlayer string `json:"currentPlayer"`
+		OpponentId    string `json:"opponentId"`
+		OpponentName  string `json:"opponentName"`
 	}
-	var games []map[string]string
+
+	var games []GameRow
 	for rows.Next() {
-		var row GameRow
-		if err := rows.Scan(&row.Id, &row.CreatedAt, &row.LoserId, &row.OpponentId, &row.OpponentName); err != nil {
+		var game GameRow
+		var createdAt time.Time
+		if err := rows.Scan(
+			&game.Id,
+			&createdAt,
+			&game.LoserId,
+			&game.CurrentPlayer,
+			&game.OpponentName,
+			&game.OpponentId,
+		); err != nil {
+			log.Printf("Error scanning game row: %v", err)
 			continue
 		}
-		result := "Draw"
-		if row.LoserId == "" {
-			result = "Draw"
-		} else if row.LoserId == playerId {
-			result = "Lost"
-		} else {
-			result = "Won"
-		}
-		games = append(games, map[string]string{
-			"id":           row.Id,
-			"date":         row.CreatedAt,
-			"opponentId":   row.OpponentId,
-			"opponentName": row.OpponentName,
-			"result":       result,
-		})
+		game.CreatedAt = createdAt.Format("Jan 2, 2006 3:04 PM")
+		games = append(games, game)
 	}
+
+	if err = rows.Err(); err != nil {
+		log.Printf("Error iterating game rows: %v", err)
+		http.Error(w, "Error processing game data", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Found %d games for player %s", len(games), playerId)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(games)
+	if err := json.NewEncoder(w).Encode(games); err != nil {
+		log.Printf("Error encoding games to JSON: %v", err)
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		return
+	}
 }
 
 func (s *GameServer) handleHeadToHeadStats(w http.ResponseWriter, r *http.Request) {

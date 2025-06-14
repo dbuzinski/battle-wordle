@@ -3,9 +3,9 @@
   import { browser } from '$app/environment';
 
   let playerName = '';
-  let recentGames = [];
-  let isEditingName = false;
   let newPlayerName = '';
+  let isEditingName = false;
+  let recentGames = [];
 
   const adjectives = [
     'Silly', 'Bouncy', 'Wiggly', 'Giggly', 'Wobbly', 'Fluffy', 'Bumpy', 'Jumpy',
@@ -26,10 +26,7 @@
   function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) {
-      const cookieValue = parts.pop()?.split(';').shift();
-      return cookieValue;
-    }
+    if (parts.length === 2) return parts.pop()?.split(';').shift() || null;
     return null;
   }
 
@@ -38,6 +35,14 @@
     expires.setFullYear(expires.getFullYear() + 1);
     const cookieString = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
     document.cookie = cookieString;
+  }
+
+  function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 
   // Load player name from cookie
@@ -50,9 +55,74 @@
   });
 
   function loadRecentGames() {
-    const games = getCookie('recentGames');
-    if (games) {
-      recentGames = JSON.parse(games);
+    const playerId = getCookie('playerId');
+    console.log('Loading recent games for playerId:', playerId);
+    
+    if (!playerId) {
+      console.log('No playerId found, generating new one');
+      // Generate a new player ID if one doesn't exist
+      const newPlayerId = generateUUID();
+      setCookie('playerId', newPlayerId);
+      
+      // Save the player name with the new ID
+      const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
+      fetch(`${serverUrl}//${window.location.hostname}:8080/api/set-player-name`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          playerId: newPlayerId,
+          playerName
+        })
+      }).catch(error => {
+        console.error('Error saving player name:', error);
+      });
+
+      // No need to load recent games for a new player
+      return;
+    }
+
+    const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    console.log('Fetching recent games from:', `${serverUrl}//${window.location.hostname}:8080/api/recent-games?playerId=${playerId}`);
+    
+    fetch(`${serverUrl}//${window.location.hostname}:8080/api/recent-games?playerId=${playerId}`)
+      .then(response => {
+        console.log('Recent games response status:', response.status);
+        return response.json();
+      })
+      .then(games => {
+        console.log('Received games:', games);
+        recentGames = games || [];
+      })
+      .catch(error => {
+        console.error('Error loading recent games:', error);
+        recentGames = [];
+      });
+  }
+
+  function getGameStatus(game) {
+    console.log('Getting game status for game:', game);
+    if (!game) {
+      console.log('Game is null/undefined');
+      return '';
+    }
+    
+    // If there's a loser, the game is finished
+    if (game.loserId) {
+      const status = game.loserId === getCookie('playerId') ? 'Lost' : 'Won';
+      console.log('Game is finished, status:', status);
+      return status;
+    }
+    
+    // Game is in progress
+    const currentPlayerId = getCookie('playerId');
+    if (game.currentPlayer === currentPlayerId) {
+      console.log('Game in progress, your turn');
+      return 'Your Turn';
+    } else {
+      console.log('Game in progress, opponent\'s turn');
+      return 'Opponent\'s Turn';
     }
   }
 
@@ -153,7 +223,7 @@
           <div class="game-item">
             <div class="game-info">
               <span class="opponent">vs {game.opponentName}</span>
-              <span class="result {game.result.toLowerCase()}">{game.result}</span>
+              <span class="result {getGameStatus(game).toLowerCase()}">{getGameStatus(game)}</span>
             </div>
             <div class="game-date">{game.date}</div>
           </div>
@@ -338,6 +408,27 @@
 
   .result.draw {
     background: #3a3a3c;
+  }
+
+  .result.your.turn {
+    background: #538d4e;
+    animation: pulse 2s infinite;
+  }
+
+  .result.opponent.s.turn {
+    background: #b59f3b;
+  }
+
+  @keyframes pulse {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+    100% {
+      opacity: 1;
+    }
   }
 
   .game-date {
