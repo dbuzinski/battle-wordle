@@ -627,9 +627,6 @@
     <div class="menu-content">
       <div class="menu-header">
         <h3>Menu</h3>
-        <button class="close-menu" on:click={closeMenu} aria-label="Close menu">
-          ×
-        </button>
       </div>
       <nav class="menu-nav">
         <a class="menu-link" on:click={startNewGame}>
@@ -1102,12 +1099,7 @@
     background: none;
     border: none;
     padding: 0;
-  }
-
-  .menu-icon:focus {
-    outline: 2px solid #538d4e;
-    outline-offset: 2px;
-    border-radius: 4px;
+    outline: none;
   }
 
   .hamburger {
@@ -1187,9 +1179,7 @@
   }
 
   .menu-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    margin-top: 20px;
     margin-bottom: 30px;
     padding-bottom: 15px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -1201,22 +1191,6 @@
     font-size: 1.5rem;
     font-weight: 600;
     letter-spacing: 0.5px;
-  }
-
-  .close-menu {
-    background: none;
-    border: none;
-    color: white;
-    font-size: 24px;
-    cursor: pointer;
-    padding: 5px;
-    line-height: 1;
-    opacity: 0.7;
-    transition: opacity 0.2s ease;
-  }
-
-  .close-menu:hover {
-    opacity: 1;
   }
 
   .menu-nav {
@@ -1234,14 +1208,13 @@
     border-radius: 8px;
     transition: all 0.2s ease;
     cursor: pointer;
-    background-color: rgba(255, 255, 255, 0.05);
     font-size: 1.1rem;
     letter-spacing: 0.3px;
   }
 
   .menu-link:hover {
-    background-color: rgba(255, 255, 255, 0.1);
     transform: translateX(5px);
+    color: #538d4e;
   }
 
   .menu-link:active {
@@ -1252,11 +1225,12 @@
     opacity: 0.5;
     cursor: not-allowed;
     transform: none !important;
+    color: rgba(255, 255, 255, 0.5);
   }
 
   .menu-link.disabled:hover {
-    background-color: rgba(255, 255, 255, 0.05);
     transform: none;
+    color: rgba(255, 255, 255, 0.5);
   }
 
   .menu-text {
