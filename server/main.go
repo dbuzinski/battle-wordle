@@ -45,17 +45,18 @@ type Game struct {
 }
 
 type Message struct {
-	Type          string   `json:"type"`
-	From          string   `json:"from"`
-	Guess         string   `json:"guess"`
-	Solution      string   `json:"solution"`
-	Guesses       []string `json:"guesses"`
-	CurrentPlayer string   `json:"currentPlayer"`
-	GameOver      bool     `json:"gameOver"`
-	LoserId       string   `json:"loserId"`
-	Players       []string `json:"players"`
-	RematchGameId string   `json:"rematchGameId"`
-	GameId        string   `json:"gameId"`
+	Type          string            `json:"type"`
+	From          string            `json:"from"`
+	Guess         string            `json:"guess"`
+	Solution      string            `json:"solution"`
+	Guesses       []string          `json:"guesses"`
+	CurrentPlayer string            `json:"currentPlayer"`
+	GameOver      bool              `json:"gameOver"`
+	LoserId       string            `json:"loserId"`
+	Players       []string          `json:"players"`
+	PlayerNames   map[string]string `json:"playerNames"`
+	RematchGameId string            `json:"rematchGameId"`
+	GameId        string            `json:"gameId"`
 }
 
 // WebSocket connection
@@ -97,10 +98,11 @@ func NewGameServer() *GameServer {
 }
 
 func createTables(db *sql.DB) {
-	// Create players table with index
+	// Create players table with index and name column
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS players (
 			id TEXT PRIMARY KEY,
+			name TEXT,
 			wins INTEGER DEFAULT 0,
 			losses INTEGER DEFAULT 0,
 			draws INTEGER DEFAULT 0,
@@ -142,33 +144,6 @@ func createTables(db *sql.DB) {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-func (s *GameServer) updatePlayerStats(playerId string, isWinner bool, isDraw bool) error {
-	// First ensure player exists
-	_, err := s.db.Exec(`
-		INSERT OR IGNORE INTO players (id) VALUES (?)
-	`, playerId)
-	if err != nil {
-		return err
-	}
-
-	// Update stats based on game outcome
-	if isDraw {
-		_, err = s.db.Exec(`
-			UPDATE players SET draws = draws + 1 WHERE id = ?
-		`, playerId)
-	} else if isWinner {
-		_, err = s.db.Exec(`
-			UPDATE players SET wins = wins + 1 WHERE id = ?
-		`, playerId)
-	} else {
-		_, err = s.db.Exec(`
-			UPDATE players SET losses = losses + 1 WHERE id = ?
-		`, playerId)
-	}
-
-	return err
 }
 
 func (s *GameServer) recordGame(gameId string, solution string, loserId string, playerIds []string) error {
@@ -232,6 +207,49 @@ func (s *GameServer) getPlayerStats(playerId string) (wins, losses, draws int, e
 		return 0, 0, 0, nil
 	}
 	return wins, losses, draws, err
+}
+
+func (s *GameServer) getHeadToHeadStats(playerId, opponentId string) (wins, losses, draws int, err error) {
+	// Use a read-only transaction for better concurrency
+	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer tx.Rollback()
+
+	// Count games where both players participated
+	rows, err := tx.Query(`
+		SELECT 
+			CASE 
+				WHEN g.loser_id = ? THEN 1
+				WHEN g.loser_id = ? THEN 0
+				ELSE 2
+			END as result
+		FROM games g
+		JOIN game_players gp1 ON g.id = gp1.game_id AND gp1.player_id = ?
+		JOIN game_players gp2 ON g.id = gp2.game_id AND gp2.player_id = ?
+	`, playerId, opponentId, playerId, opponentId)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var result int
+		if err := rows.Scan(&result); err != nil {
+			return 0, 0, 0, err
+		}
+		switch result {
+		case 0:
+			wins++
+		case 1:
+			losses++
+		case 2:
+			draws++
+		}
+	}
+
+	return wins, losses, draws, nil
 }
 
 func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -484,6 +502,13 @@ func main() {
 
 	// Add CORS middleware for stats endpoint
 	http.HandleFunc("/api/stats", server.handleStats)
+	http.HandleFunc("/api/head-to-head-stats", server.handleHeadToHeadStats)
+
+	// Set player name endpoint
+	http.HandleFunc("/api/set-player-name", server.handleSetPlayerName)
+
+	// Recent games endpoint
+	http.HandleFunc("/api/recent-games", server.handleRecentGames)
 
 	log.Println("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -520,6 +545,16 @@ func (s *GameServer) getOrCreateGame(gameId string, isRematch bool, previousGame
 }
 
 func (s *GameServer) sendGameState(game *Game, playerId string) {
+	// Get player names
+	playerNames := make(map[string]string)
+	for _, pid := range game.Players {
+		var name string
+		err := s.db.QueryRow("SELECT name FROM players WHERE id = ?", pid).Scan(&name)
+		if err == nil && name != "" {
+			playerNames[pid] = name
+		}
+	}
+
 	msg := Message{
 		Type:          GAME_STATE,
 		CurrentPlayer: game.CurrentPlayer,
@@ -527,6 +562,7 @@ func (s *GameServer) sendGameState(game *Game, playerId string) {
 		Guesses:       game.Guesses,
 		GameOver:      game.GameOver,
 		Players:       game.Players,
+		PlayerNames:   playerNames,
 		LoserId:       game.LoserId,
 		RematchGameId: game.RematchGameId,
 	}
@@ -543,6 +579,16 @@ func (s *GameServer) sendGameState(game *Game, playerId string) {
 }
 
 func (s *GameServer) broadcastGameState(game *Game) {
+	// Get player names
+	playerNames := make(map[string]string)
+	for _, pid := range game.Players {
+		var name string
+		err := s.db.QueryRow("SELECT name FROM players WHERE id = ?", pid).Scan(&name)
+		if err == nil && name != "" {
+			playerNames[pid] = name
+		}
+	}
+
 	msg := Message{
 		Type:          GAME_STATE,
 		CurrentPlayer: game.CurrentPlayer,
@@ -550,6 +596,7 @@ func (s *GameServer) broadcastGameState(game *Game) {
 		Guesses:       game.Guesses,
 		GameOver:      game.GameOver,
 		Players:       game.Players,
+		PlayerNames:   playerNames,
 		LoserId:       game.LoserId,
 		RematchGameId: game.RematchGameId,
 	}
@@ -589,6 +636,29 @@ func (s *GameServer) handleQueue(playerId string, conn *websocket.Conn) {
 		player2 := s.queue[1]
 		s.queue = s.queue[2:] // Remove matched players from queue
 
+		// Ensure both players exist in the database and get their names
+		playerNames := make(map[string]string)
+		for _, pid := range []string{player1.PlayerId, player2.PlayerId} {
+			// First ensure player exists
+			_, err := s.db.Exec("INSERT OR IGNORE INTO players (id) VALUES (?)", pid)
+			if err != nil {
+				log.Printf("Error ensuring player exists: %v", err)
+				continue
+			}
+
+			// Then get their name
+			var name string
+			err = s.db.QueryRow("SELECT name FROM players WHERE id = ?", pid).Scan(&name)
+			log.Printf("Getting name for player %s: found name '%s'", pid, name)
+			if err == nil && name != "" {
+				playerNames[pid] = name
+			} else {
+				// If no name is set, use a default name
+				playerNames[pid] = "Player"
+				log.Printf("No name found for player %s, using default", pid)
+			}
+		}
+
 		// Create new game
 		gameId := uuid.New().String()
 		game := &Game{
@@ -613,12 +683,16 @@ func (s *GameServer) handleQueue(playerId string, conn *websocket.Conn) {
 		// Store game
 		s.games[gameId] = game
 
+		log.Printf("Match found! Game ID: %s, Players: %v, First player: %s, Solution: %s, Player Names: %v",
+			gameId, game.Players, game.CurrentPlayer, game.Solution, playerNames)
+
 		// Send match found message to both players
 		matchMsg := Message{
-			Type:     MATCH_FOUND,
-			GameId:   gameId,
-			Players:  game.Players,
-			Solution: game.Solution,
+			Type:        MATCH_FOUND,
+			GameId:      gameId,
+			Players:     game.Players,
+			Solution:    game.Solution,
+			PlayerNames: playerNames,
 		}
 
 		data, err := json.Marshal(matchMsg)
@@ -627,8 +701,7 @@ func (s *GameServer) handleQueue(playerId string, conn *websocket.Conn) {
 			return
 		}
 
-		log.Printf("Match found! Game ID: %s, Players: %v, First player: %s",
-			gameId, game.Players, game.CurrentPlayer)
+		log.Printf("Sending match found message to players with names: %v", playerNames)
 
 		// Send to both players
 		if err := player1.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -676,6 +749,147 @@ func (s *GameServer) handleStats(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "Error fetching player stats", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{
+		"wins":   wins,
+		"losses": losses,
+		"draws":  draws,
+	})
+}
+
+// Set player name endpoint
+func (s *GameServer) handleSetPlayerName(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		PlayerId   string `json:"playerId"`
+		PlayerName string `json:"playerName"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// First ensure player exists
+	_, err := s.db.Exec("INSERT OR IGNORE INTO players (id) VALUES (?)", req.PlayerId)
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	// Then update their name
+	_, err = s.db.Exec("UPDATE players SET name = ? WHERE id = ?", req.PlayerName, req.PlayerId)
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// Recent games endpoint
+func (s *GameServer) handleRecentGames(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	playerId := r.URL.Query().Get("playerId")
+	if playerId == "" {
+		http.Error(w, "Player ID is required", http.StatusBadRequest)
+		return
+	}
+	rows, err := s.db.Query(`
+		SELECT g.id, g.created_at, g.loser_id, gp2.player_id as opponent_id, p2.name as opponent_name
+		FROM games g
+		JOIN game_players gp1 ON g.id = gp1.game_id AND gp1.player_id = ?
+		JOIN game_players gp2 ON g.id = gp2.game_id AND gp2.player_id != ?
+		LEFT JOIN players p2 ON gp2.player_id = p2.id
+		ORDER BY g.created_at DESC
+		LIMIT 10
+	`, playerId, playerId)
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	type GameRow struct {
+		Id           string `json:"id"`
+		CreatedAt    string `json:"date"`
+		LoserId      string `json:"loserId"`
+		OpponentId   string `json:"opponentId"`
+		OpponentName string `json:"opponentName"`
+	}
+	var games []map[string]string
+	for rows.Next() {
+		var row GameRow
+		if err := rows.Scan(&row.Id, &row.CreatedAt, &row.LoserId, &row.OpponentId, &row.OpponentName); err != nil {
+			continue
+		}
+		result := "Draw"
+		if row.LoserId == "" {
+			result = "Draw"
+		} else if row.LoserId == playerId {
+			result = "Lost"
+		} else {
+			result = "Won"
+		}
+		games = append(games, map[string]string{
+			"id":           row.Id,
+			"date":         row.CreatedAt,
+			"opponentId":   row.OpponentId,
+			"opponentName": row.OpponentName,
+			"result":       result,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(games)
+}
+
+func (s *GameServer) handleHeadToHeadStats(w http.ResponseWriter, r *http.Request) {
+	// Add CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight requests
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	playerId := r.URL.Query().Get("playerId")
+	opponentId := r.URL.Query().Get("opponentId")
+	if playerId == "" || opponentId == "" {
+		http.Error(w, "Player ID and Opponent ID are required", http.StatusBadRequest)
+		return
+	}
+
+	wins, losses, draws, err := s.getHeadToHeadStats(playerId, opponentId)
+	if err != nil {
+		http.Error(w, "Error fetching head-to-head stats", http.StatusInternalServerError)
 		return
 	}
 
