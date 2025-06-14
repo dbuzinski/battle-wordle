@@ -37,60 +37,25 @@
   let isMenuOpen = false;
 
   // Cookie management
-  function setCookie(name, value) {
-    const expires = new Date();
-    expires.setFullYear(expires.getFullYear() + 1); // Cookie expires in 1 year
-
-    const cookieString = `${encodeURIComponent(name)}=${encodeURIComponent(value)};` +
-      `path=/;` +
-      `expires=${expires.toUTCString()};` +
-      `SameSite=None;` +
-      `Secure`;
-
-    document.cookie = cookieString;
-  }
-
   function getCookie(name) {
-    const nameEQ = `${encodeURIComponent(name)}=`;
-    const cookies = document.cookie.split(';');
-    for (let cookie of cookies) {
-      while (cookie.charAt(0) === ' ') cookie = cookie.substring(1);
-      if (cookie.indexOf(nameEQ) === 0) {
-        return decodeURIComponent(cookie.substring(nameEQ.length));
-      }
-    }
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop()?.split(';').shift();
     return null;
   }
 
-  // Player ID management
+  function setCookie(name, value) {
+    const expires = new Date();
+    expires.setFullYear(expires.getFullYear() + 1); // 1-year expiry
+    document.cookie = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
+  }
+
   function getPlayerId() {
-    // Try localStorage first
-    try {
-      const storedId = localStorage.getItem('playerId');
-      if (storedId) return storedId;
-    } catch (e) {
-      console.warn('localStorage not available:', e);
-    }
+    const existingId = getCookie('playerId');
+    if (existingId) return existingId;
 
-    // Fallback to cookie
-    const cookieId = getCookie('playerId');
-    if (cookieId) {
-      try {
-        localStorage.setItem('playerId', cookieId);
-      } catch (e) {
-        console.warn('Could not store in localStorage:', e);
-      }
-      return cookieId;
-    }
-
-    // Generate new ID if none found
     const newId = crypto.randomUUID();
-    try {
-      localStorage.setItem('playerId', newId);
-    } catch (e) {
-      console.warn('Could not store in localStorage:', e);
-    }
-    setCookie('playerId', newId); // Set cookie as backup
+    setCookie('playerId', newId);
     return newId;
   }
 
