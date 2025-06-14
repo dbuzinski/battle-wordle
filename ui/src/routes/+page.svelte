@@ -38,6 +38,7 @@
   let rematchGameId = '';
   let isInQueue = false;
   let queueSocket = null;
+  let playerStats = {};
 
   // Cookie management
   function getCookie(name) {
@@ -198,6 +199,34 @@
     }
     
     updateTurnStatus(msg);
+
+    // Fetch player stats when game starts
+    if (playerIds.length === 2 && !isSpectator) {
+      fetchPlayerStats();
+    }
+  }
+
+  async function fetchPlayerStats() {
+    try {
+      const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
+      const response = await fetch(`${serverUrl}//${window.location.hostname}:8080/api/stats?playerId=${playerId}`);
+      if (response.ok) {
+        const stats = await response.json();
+        playerStats[playerId] = stats;
+        
+        // Fetch opponent stats
+        const opponentId = playerIds.find(id => id !== playerId);
+        if (opponentId) {
+          const opponentResponse = await fetch(`${serverUrl}//${window.location.hostname}:8080/api/stats?playerId=${opponentId}`);
+          if (opponentResponse.ok) {
+            const opponentStats = await opponentResponse.json();
+            playerStats[opponentId] = opponentStats;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching player stats:', error);
+    }
   }
 
   function handleGameOver(msg) {
@@ -207,6 +236,11 @@
     allGuesses = msg.guesses || [];
     rematchGameId = msg.rematchGameId;
     updateBoard();
+    
+    // Fetch updated stats after game over
+    if (msg.players.includes(playerId)) {
+      fetchPlayerStats();
+    }
     
     const gameOverMessage = getGameOverMessage(msg);
     message = gameOverMessage;
@@ -629,12 +663,24 @@
         <h3>Menu</h3>
       </div>
       <nav class="menu-nav">
-        <a class="menu-link" on:click={startNewGame}>
+        <button 
+          class="menu-link" 
+          on:click={startNewGame}
+          type="button"
+          aria-label="Start new game"
+        >
           <span class="menu-text">New Game</span>
-        </a>
-        <a class="menu-link" on:click={findMatch} class:disabled={isInQueue}>
+        </button>
+        <button 
+          class="menu-link" 
+          on:click={findMatch} 
+          class:disabled={isInQueue}
+          type="button"
+          aria-label="Find match"
+          disabled={isInQueue}
+        >
           <span class="menu-text">{isInQueue ? 'Finding Match...' : 'Find Match'}</span>
-        </a>
+        </button>
       </nav>
     </div>
   </div>
@@ -643,6 +689,17 @@
     <div class="queue-status">
       <div class="queue-spinner"></div>
       <p>Finding match...</p>
+    </div>
+  {/if}
+
+  {#if playerIds.length === 2 && !isSpectator}
+    <div class="score-display">
+      <div class="score-item">
+        <span class="score-label">Opponent</span>
+        {#if playerStats[playerId]}
+          <span class="stats-text">Your Score: W: {playerStats[playerId].wins} L: {playerStats[playerId].losses} D: {playerStats[playerId].draws}</span>
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -1270,5 +1327,48 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  .score-display {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 1000;
+  }
+
+  .score-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .score-label {
+    font-size: 0.8rem;
+    color: #818384;
+  }
+
+  .score-value {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: white;
+  }
+
+  .stats-text {
+    font-size: 0.7rem;
+    color: #818384;
+  }
+
+  .score-separator {
+    color: #818384;
+    font-size: 1.2rem;
+    font-weight: bold;
   }
 </style>

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"log"
 	"math/rand"
@@ -9,9 +11,11 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -69,12 +73,165 @@ type GameServer struct {
 	games map[string]*Game
 	queue []QueueEntry
 	mutex sync.RWMutex
+	db    *sql.DB
 }
 
 func NewGameServer() *GameServer {
+	db, err := sql.Open("sqlite3", "./game.db?_journal=WAL&_timeout=5000&_busy_timeout=5000&_txlock=immediate")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Set connection pool settings
+	db.SetMaxOpenConns(10) // Reduced from 25 to prevent too many concurrent connections
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	// Create tables if they don't exist
+	createTables(db)
+
 	return &GameServer{
 		games: make(map[string]*Game),
+		db:    db,
 	}
+}
+
+func createTables(db *sql.DB) {
+	// Create players table with index
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS players (
+			id TEXT PRIMARY KEY,
+			wins INTEGER DEFAULT 0,
+			losses INTEGER DEFAULT 0,
+			draws INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_players_id ON players(id);
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create games table with index
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS games (
+			id TEXT PRIMARY KEY,
+			solution TEXT NOT NULL,
+			loser_id TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (loser_id) REFERENCES players(id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_games_loser_id ON games(loser_id);
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create game_players table with indexes
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS game_players (
+			game_id TEXT,
+			player_id TEXT,
+			FOREIGN KEY (game_id) REFERENCES games(id),
+			FOREIGN KEY (player_id) REFERENCES players(id),
+			PRIMARY KEY (game_id, player_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_game_players_game_id ON game_players(game_id);
+		CREATE INDEX IF NOT EXISTS idx_game_players_player_id ON game_players(player_id);
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (s *GameServer) updatePlayerStats(playerId string, isWinner bool, isDraw bool) error {
+	// First ensure player exists
+	_, err := s.db.Exec(`
+		INSERT OR IGNORE INTO players (id) VALUES (?)
+	`, playerId)
+	if err != nil {
+		return err
+	}
+
+	// Update stats based on game outcome
+	if isDraw {
+		_, err = s.db.Exec(`
+			UPDATE players SET draws = draws + 1 WHERE id = ?
+		`, playerId)
+	} else if isWinner {
+		_, err = s.db.Exec(`
+			UPDATE players SET wins = wins + 1 WHERE id = ?
+		`, playerId)
+	} else {
+		_, err = s.db.Exec(`
+			UPDATE players SET losses = losses + 1 WHERE id = ?
+		`, playerId)
+	}
+
+	return err
+}
+
+func (s *GameServer) recordGame(gameId string, solution string, loserId string, playerIds []string) error {
+	// Use a single transaction for all operations
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Insert game and game players in a single transaction
+	_, err = tx.Exec(`
+		INSERT INTO games (id, solution, loser_id) VALUES (?, ?, ?);
+		INSERT OR IGNORE INTO players (id) VALUES (?), (?);
+		INSERT INTO game_players (game_id, player_id) VALUES (?, ?), (?, ?);
+		UPDATE players SET 
+			wins = CASE 
+				WHEN ? = '' THEN wins + 1 
+				WHEN id = ? THEN wins + 1 
+				ELSE wins 
+			END,
+			losses = CASE 
+				WHEN ? = '' THEN losses + 1 
+				WHEN id = ? THEN losses + 1 
+				ELSE losses 
+			END,
+			draws = CASE 
+				WHEN ? = '' THEN draws + 1 
+				ELSE draws 
+			END
+		WHERE id IN (?, ?)
+	`,
+		gameId, solution, loserId,
+		playerIds[0], playerIds[1],
+		gameId, playerIds[0], gameId, playerIds[1],
+		loserId, playerIds[0],
+		loserId, playerIds[1],
+		loserId,
+		playerIds[0], playerIds[1])
+
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (s *GameServer) getPlayerStats(playerId string) (wins, losses, draws int, err error) {
+	// Use a read-only transaction for better concurrency
+	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer tx.Rollback()
+
+	err = tx.QueryRow(`
+		SELECT wins, losses, draws FROM players WHERE id = ?
+	`, playerId).Scan(&wins, &losses, &draws)
+
+	if err == sql.ErrNoRows {
+		return 0, 0, 0, nil
+	}
+	return wins, losses, draws, err
 }
 
 func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +364,7 @@ func (s *GameServer) handleGuess(game *Game, playerId string, guess string) {
 		game.GameOver = true
 		game.LoserId = playerId
 		log.Printf("Player %s lost game %s", playerId, game.Id)
-		s.broadcastGameOver(game)
+		s.handleGameOver(game)
 		return
 	}
 
@@ -215,7 +372,7 @@ func (s *GameServer) handleGuess(game *Game, playerId string, guess string) {
 		game.GameOver = true
 		game.LoserId = ""
 		log.Printf("Game %s ended in a draw", game.Id)
-		s.broadcastGameOver(game)
+		s.handleGameOver(game)
 		return
 	}
 
@@ -235,10 +392,16 @@ func (s *GameServer) handleGuess(game *Game, playerId string, guess string) {
 	s.broadcastGameState(game)
 }
 
-func (s *GameServer) broadcastGameOver(game *Game) {
+func (s *GameServer) handleGameOver(game *Game) {
 	// Generate a new game ID for the rematch
 	rematchGameId := uuid.New().String()
 	game.RematchGameId = rematchGameId
+
+	// Record the game in the database
+	err := s.recordGame(game.Id, game.Solution, game.LoserId, game.Players)
+	if err != nil {
+		log.Printf("Error recording game: %v", err)
+	}
 
 	// Create the rematch game instance
 	s.mutex.Lock()
@@ -312,7 +475,16 @@ func getRandomWord() string {
 
 func main() {
 	server := NewGameServer()
-	http.HandleFunc("/ws", server.handleWebSocket)
+
+	// Add CORS middleware for WebSocket
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		server.handleWebSocket(w, r)
+	})
+
+	// Add CORS middleware for stats endpoint
+	http.HandleFunc("/api/stats", server.handleStats)
+
 	log.Println("Server starting on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
@@ -466,4 +638,51 @@ func (s *GameServer) handleQueue(playerId string, conn *websocket.Conn) {
 			log.Printf("Error sending match found message to player %s: %v", player2.PlayerId, err)
 		}
 	}
+}
+
+func (s *GameServer) handleStats(w http.ResponseWriter, r *http.Request) {
+	// Add CORS headers
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle preflight requests
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	playerId := r.URL.Query().Get("playerId")
+	if playerId == "" {
+		http.Error(w, "Player ID is required", http.StatusBadRequest)
+		return
+	}
+
+	wins, losses, draws, err := s.getPlayerStats(playerId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Return zero stats for new players
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]int{
+				"wins":   0,
+				"losses": 0,
+				"draws":  0,
+			})
+			return
+		}
+		http.Error(w, "Error fetching player stats", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{
+		"wins":   wins,
+		"losses": losses,
+		"draws":  draws,
+	})
 }
