@@ -92,7 +92,7 @@
 
   function initializeWebSocket() {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.hostname}/ws?game=${gameId}`;
+    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}`;
     
     socket = new WebSocket(wsUrl);
     
@@ -158,18 +158,18 @@
 
   function getGameOverMessage(msg) {
     if (!msg.players.includes(playerId)) {
-      return `Game Over!\nThe word is "${msg.solution}"!`;
+      return `Game Over!`;
     }
     
     if (msg.loserId === playerId) {
-      return `You lost!\nThe word is "${msg.solution}"!`;
+      return `You lost!`;
     }
     
     if (msg.loserId) {
-      return `You won!\nThe word is "${msg.solution}"!`;
+      return `You won!`;
     }
     
-    return `Draw!\nThe word is "${msg.solution}"!`;
+    return `Draw!`;
   }
 
   function updateTurnStatus(msg) {
@@ -443,7 +443,8 @@
 
   {#if isGameOver}
     <div class="game-over">
-      <h2>{message}</h2>
+      <p>{message}</p>
+      <p>"{solution}"</p>
     </div>
   {/if}
 
@@ -705,13 +706,13 @@
 
   .message {
     position: fixed;
-    top: 20px;
+    top: 50%;
     left: 50%;
-    transform: translateX(-50%);
+    transform: translate(-50%, -50%);
     padding: 12px 24px;
     border-radius: 8px;
-    background-color: rgba(51, 51, 51, 0.95);
-    color: white;
+    background-color: rgba(255, 255, 255, 0.95);
+    color: #121213;
     z-index: 1000;
     text-align: center;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
@@ -721,22 +722,23 @@
 
   @keyframes slideDown {
     from {
-      transform: translate(-50%, -100%);
+      transform: translate(-50%, -60%);
       opacity: 0;
     }
     to {
-      transform: translate(-50%, 0);
+      transform: translate(-50%, -50%);
       opacity: 1;
     }
   }
 
   .message.error {
     background-color: rgba(255, 68, 68, 0.95);
+    color: white;
   }
 
   .message.success {
     background-color: rgba(68, 255, 68, 0.95);
-    color: black;
+    color: #121213;
   }
 
   .turn-status {
@@ -768,32 +770,26 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    padding: 2rem;
-    border-radius: 12px;
-    background-color: rgba(51, 51, 51, 0.95);
-    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.95);
+    color: #121213;
     z-index: 1000;
     text-align: center;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    animation: fadeIn 0.5s ease-out;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    animation: slideDown 0.3s ease-out;
     backdrop-filter: blur(8px);
   }
 
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translate(-50%, -40%);
-    }
-    to {
-      opacity: 1;
-      transform: translate(-50%, -50%);
-    }
+  .game-over p {
+    margin: 0;
+    font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+    line-height: 1.5;
   }
 
-  .game-over h2 {
-    margin: 0;
-    font-size: clamp(1.2rem, 4vw, 1.5rem);
-    margin-bottom: 1rem;
+  .game-over p:last-child {
+    margin-top: 8px;
+    font-weight: bold;
   }
 
   .new-game-btn {
