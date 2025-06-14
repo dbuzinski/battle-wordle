@@ -78,7 +78,7 @@
     console.log('[getPlayerId] No playerId found, generating new one:', newId);
     setCookie('playerId', newId);
 
-    // Confirm it’s set
+    // Confirm it's set
     const confirmId = getCookie('playerId');
     if (confirmId === newId) {
       console.log('[getPlayerId] New playerId successfully stored in cookie:', confirmId);
@@ -134,7 +134,7 @@
 
   function initializeWebSocket() {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.hostname}/ws?game=${gameId}`;
+    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}`;
     
     socket = new WebSocket(wsUrl);
     
@@ -182,10 +182,13 @@
       initializeBoard();
     }
     
-    // If the game is over, show the game over message
+    // Show game over message if the game is over
     if (isGameOver) {
       message = getGameOverMessage(msg);
       showMessage = true;
+    } else {
+      showMessage = false;
+      message = '';
     }
     
     updateTurnStatus(msg);
@@ -231,6 +234,39 @@
     } else {
       turnStatusMessage = isMyTurn ? "Your turn!" : "Waiting for opponent...";
     }
+  }
+
+  function startRematch() {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}&rematch=true`;
+    
+    socket = new WebSocket(wsUrl);
+    
+    socket.onopen = () => {
+      console.log('WebSocket connected for rematch');
+      socket.send(JSON.stringify({
+        type: 'join',
+        from: playerId
+      }));
+    };
+
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      
+      if (msg.type === 'game_state') {
+        handleGameState(msg);
+      } else if (msg.type === 'game_over') {
+        handleGameOver(msg);
+      }
+    };
+
+    socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    socket.onclose = () => {
+      console.log('WebSocket connection closed');
+    };
   }
 
   // Game logic
@@ -514,6 +550,16 @@
     <div class="game-over">
       <p>{message}</p>
       <p>"{solution}"</p>
+      {#if !isSpectator}
+        <div class="game-over-buttons">
+          <button class="game-over-btn rematch" on:click={startRematch}>
+            Rematch
+          </button>
+          <button class="game-over-btn new-game" on:click={startNewGame}>
+            New Game
+          </button>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -832,7 +878,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    padding: 12px 24px;
+    padding: 24px;
     border-radius: 8px;
     background-color: rgba(255, 255, 255, 0.95);
     color: #121213;
@@ -841,6 +887,7 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     animation: slideDown 0.3s ease-out;
     backdrop-filter: blur(8px);
+    min-width: 280px;
   }
 
   .game-over p {
@@ -849,34 +896,40 @@
     line-height: 1.5;
   }
 
-  .game-over p:last-child {
+  .game-over p:last-of-type {
     margin-top: 8px;
     font-weight: bold;
   }
 
-  .new-game-btn {
-    padding: clamp(0.8rem, 2vw, 1rem) clamp(1.5rem, 4vw, 2rem);
-    background-color: #538d4e;
-    color: white;
+  .game-over-buttons {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+    justify-content: center;
+  }
+
+  .game-over-btn {
+    padding: 12px 24px;
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-size: clamp(1rem, 2.5vw, 1.1rem);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    font-size: 1rem;
     font-weight: bold;
-    min-width: clamp(160px, 40vw, 200px);
-    box-shadow: 0 4px 12px rgba(83, 141, 78, 0.3);
+    transition: all 0.3s ease;
+    min-width: 120px;
+    background-color: #538d4e;
+    color: white;
   }
 
-  .new-game-btn:hover {
-    background-color: #4a7d45;
+  .game-over-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(83, 141, 78, 0.4);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    background-color: #4a7d45;
   }
 
-  .new-game-btn:active {
+  .game-over-btn:active {
     transform: translateY(0);
-    box-shadow: 0 2px 8px rgba(83, 141, 78, 0.3);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   }
 
   h1 {

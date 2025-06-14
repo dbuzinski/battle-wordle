@@ -72,12 +72,14 @@ func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isRematch := r.URL.Query().Get("rematch") == "true"
+
 	upgrader := websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
-			return origin == "https://battlewordle.app" || origin == "https://www.battlewordle.app"
+			return origin == "https://battlewordle.app" || origin == "https://www.battlewordle.app" || origin == "http://localhost:5173"
 		},
 	}
 
@@ -87,7 +89,7 @@ func (s *GameServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	game := s.getOrCreateGame(gameId)
+	game := s.getOrCreateGame(gameId, isRematch)
 	log.Printf("Player connecting to game: %s", gameId)
 
 	defer func() {
@@ -264,7 +266,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func (s *GameServer) getOrCreateGame(gameId string) *Game {
+func (s *GameServer) getOrCreateGame(gameId string, isRematch bool) *Game {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -280,6 +282,17 @@ func (s *GameServer) getOrCreateGame(gameId string) *Game {
 		}
 		s.games[gameId] = game
 		log.Printf("New game created with ID: %s, solution: %s", gameId, game.Solution)
+	} else if isRematch {
+		// For rematch, keep the same players but flip the turn order
+		if len(game.Players) == 2 {
+			game.Players[0], game.Players[1] = game.Players[1], game.Players[0]
+			game.CurrentPlayer = game.Players[0]
+			game.Solution = getRandomWord()
+			game.Guesses = make([]string, 0)
+			game.GameOver = false
+			game.LoserId = ""
+			log.Printf("Rematch started for game %s with flipped turn order", gameId)
+		}
 	}
 	return game
 }
