@@ -6,39 +6,37 @@ import (
 	"log"
 	"net/http"
 
+	"battle-wordle/server/internal/config"
 	"battle-wordle/server/internal/game"
 )
 
 // HTTPHandler handles HTTP endpoints
 type HTTPHandler struct {
 	gameService *game.Service
+	config      *config.Config
 }
 
 // NewHTTPHandler creates a new HTTP handler
-func NewHTTPHandler(gameService *game.Service) *HTTPHandler {
+func NewHTTPHandler(gameService *game.Service, config *config.Config) *HTTPHandler {
 	return &HTTPHandler{
 		gameService: gameService,
+		config:      config,
 	}
 }
 
-// allowedOrigins is a list of allowed origins for CORS
-var allowedOrigins = []string{
-	"https://battlewordle.app",
-	"https://www.battlewordle.app",
-}
-
 // corsMiddleware adds CORS headers to the response
-func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+func (h *HTTPHandler) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		for _, allowedOrigin := range allowedOrigins {
+		for _, allowedOrigin := range h.config.Server.AllowedOrigins {
 			if origin == allowedOrigin {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				break
 			}
 		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -51,7 +49,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 // HandleStats handles player stats requests
 func (h *HTTPHandler) HandleStats(w http.ResponseWriter, r *http.Request) {
-	corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	h.corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -89,7 +87,7 @@ func (h *HTTPHandler) HandleStats(w http.ResponseWriter, r *http.Request) {
 
 // HandleSetPlayerName handles setting player names
 func (h *HTTPHandler) HandleSetPlayerName(w http.ResponseWriter, r *http.Request) {
-	corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	h.corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -116,7 +114,7 @@ func (h *HTTPHandler) HandleSetPlayerName(w http.ResponseWriter, r *http.Request
 
 // HandleRecentGames handles recent games requests
 func (h *HTTPHandler) HandleRecentGames(w http.ResponseWriter, r *http.Request) {
-	corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	h.corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -146,7 +144,7 @@ func (h *HTTPHandler) HandleRecentGames(w http.ResponseWriter, r *http.Request) 
 
 // HandleHeadToHeadStats handles head-to-head stats requests
 func (h *HTTPHandler) HandleHeadToHeadStats(w http.ResponseWriter, r *http.Request) {
-	corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	h.corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return

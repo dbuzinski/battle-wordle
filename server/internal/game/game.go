@@ -72,7 +72,7 @@ func (s *Service) GetGame(id string) (*models.Game, error) {
 	s.mutex.RUnlock()
 
 	if !exists {
-		return nil, models.ErrGameNotFound
+		return nil, fmt.Errorf("game not found: %s", id)
 	}
 	return game, nil
 }
@@ -133,7 +133,7 @@ func (s *Service) JoinGame(gameId string, playerId string, conn *websocket.Conn)
 	game, exists := s.games[gameId]
 	if !exists {
 		s.mutex.Unlock()
-		return models.ErrGameNotFound
+		return fmt.Errorf("game not found: %s", gameId)
 	}
 
 	game.Connections[playerId] = conn
@@ -180,22 +180,22 @@ func (s *Service) MakeGuess(gameId string, playerId string, guess string) error 
 	game, exists := s.games[gameId]
 	if !exists {
 		s.mutex.Unlock()
-		return models.ErrGameNotFound
+		return fmt.Errorf("game not found: %s", gameId)
 	}
 
 	if game.GameOver {
 		s.mutex.Unlock()
-		return models.ErrGameOver
+		return fmt.Errorf("game is over")
 	}
 
 	if game.CurrentPlayer != playerId {
 		s.mutex.Unlock()
-		return models.ErrNotYourTurn
+		return fmt.Errorf("not your turn")
 	}
 
 	if len(game.Guesses) > 0 && len(game.Players) < 2 {
 		s.mutex.Unlock()
-		return models.ErrWaitingForOpponent
+		return fmt.Errorf("waiting for opponent")
 	}
 
 	game.Guesses = append(game.Guesses, guess)

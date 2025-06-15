@@ -14,7 +14,7 @@ type DB struct {
 
 // New creates a new database connection
 func New(dbPath string) (*DB, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_timeout=5000&_busy_timeout=5000&_txlock=immediate")
+	db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_busy_timeout=5000&_txlock=deferred")
 	if err != nil {
 		return nil, err
 	}
@@ -48,14 +48,9 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// Drop and recreate games table to ensure it has all required columns
-	_, err = db.Exec(`DROP TABLE IF EXISTS games`)
-	if err != nil {
-		return err
-	}
-
+	// Create games table
 	_, err = db.Exec(`
-		CREATE TABLE games (
+		CREATE TABLE IF NOT EXISTS games (
 			id TEXT PRIMARY KEY,
 			solution TEXT NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

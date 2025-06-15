@@ -66,6 +66,14 @@ type GameRepository interface {
 	RecordGameResult(gameId string, solution string, loserId string, playerIds []string) error
 }
 
+// GameService defines the interface for game business logic
+type GameService interface {
+	CreateGame() (*Game, error)
+	JoinGame(gameId string, playerId string, conn *websocket.Conn) error
+	MakeGuess(gameId string, playerId string, guess string) error
+	HandleGameOver(game *Game) error
+}
+
 // PlayerRepository defines the interface for player data operations
 type PlayerRepository interface {
 	GetPlayer(id string) (*Player, error)
@@ -73,14 +81,6 @@ type PlayerRepository interface {
 	UpdatePlayerName(id string, name string) error
 	GetPlayerStats(id string) (wins, losses, draws int, err error)
 	GetHeadToHeadStats(playerId, opponentId string) (wins, losses, draws int, err error)
-}
-
-// GameService defines the interface for game business logic
-type GameService interface {
-	CreateGame() (*Game, error)
-	JoinGame(gameId string, playerId string, conn *websocket.Conn) error
-	MakeGuess(gameId string, playerId string, guess string) error
-	HandleGameOver(game *Game) error
 }
 
 // MatchmakingService defines the interface for matchmaking logic

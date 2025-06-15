@@ -77,8 +77,7 @@
       setCookie('playerId', newPlayerId);
       
       // Save the player name with the new ID
-      const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-      fetch(`${serverUrl}//${window.location.hostname}/api/set-player-name`, {
+      fetch(`${import.meta.env.VITE_API_URL}/set-player-name`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,8 +93,7 @@
       return;
     }
 
-    const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    fetch(`${serverUrl}//${window.location.hostname}/api/recent-games?playerId=${playerId}`)
+    fetch(`${import.meta.env.VITE_API_URL}/recent-games?playerId=${playerId}`)
       .then(response => response.json())
       .then(games => {
         recentGames = games || [];
@@ -186,8 +184,7 @@
       const playerId = getCookie('playerId');
       if (playerId) {
         try {
-          const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-          const response = await fetch(`${serverUrl}//${window.location.hostname}/api/set-player-name`, {
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/set-player-name`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -239,8 +236,7 @@
     const pathParts = window.location.pathname.split('/');
     gameId = pathParts[pathParts.length - 1];
     
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    socket = new WebSocket(`${wsProtocol}//${window.location.hostname}/ws?game=${gameId}`);
+    socket = new WebSocket(`${import.meta.env.VITE_WS_URL}?game=${gameId}`);
     
     socket.onmessage = (event: MessageEvent) => {
       const message = JSON.parse(event.data);

@@ -107,8 +107,7 @@
     }
   
     function initializeWebSocket() {
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.hostname}/ws?game=${gameId}`;
+      const wsUrl = `${import.meta.env.VITE_WS_URL}?game=${gameId}`;
       
       socket = new WebSocket(wsUrl);
       
@@ -175,10 +174,9 @@
   
     async function fetchPlayerStats() {
       try {
-        const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
         const opponentId = playerIds.find(id => id !== playerId);
         if (opponentId) {
-          const response = await fetch(`${serverUrl}//${window.location.hostname}/api/head-to-head-stats?playerId=${playerId}&opponentId=${opponentId}`);
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/head-to-head-stats?playerId=${playerId}&opponentId=${opponentId}`);
           if (response.ok) {
             const stats = await response.json();
             playerStats[playerId] = stats;
@@ -255,8 +253,7 @@
       
       resetGameState();
       
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.hostname}/ws?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
+      const wsUrl = `${import.meta.env.VITE_WS_URL}?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
       
       socket = new WebSocket(wsUrl);
       
@@ -520,8 +517,7 @@
       const playerName = getCookie('playerName');
       if (playerName) {
         try {
-          const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-          const response = await fetch(`${serverUrl}//${window.location.hostname}/api/set-player-name`, {
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/set-player-name`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -546,8 +542,7 @@
         }
       }
       
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.hostname}/ws`;
+      const wsUrl = `${import.meta.env.VITE_WS_URL}`;
       
       queueSocket = new WebSocket(wsUrl);
       

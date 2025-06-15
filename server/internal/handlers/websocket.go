@@ -7,6 +7,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"battle-wordle/server/internal/config"
 	"battle-wordle/server/internal/game"
 	"battle-wordle/server/pkg/models"
 )
@@ -15,21 +16,28 @@ import (
 type WebSocketHandler struct {
 	gameService        *game.Service
 	matchmakingService *game.MatchmakingService
+	config             *config.Config
 	upgrader           websocket.Upgrader
 }
 
 // NewWebSocketHandler creates a new WebSocket handler
-func NewWebSocketHandler(gameService *game.Service, matchmakingService *game.MatchmakingService) *WebSocketHandler {
+func NewWebSocketHandler(gameService *game.Service, matchmakingService *game.MatchmakingService, config *config.Config) *WebSocketHandler {
 	return &WebSocketHandler{
 		gameService:        gameService,
 		matchmakingService: matchmakingService,
+		config:             config,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
 				origin := r.Header.Get("Origin")
-				return origin == "https://battlewordle.app" ||
-					origin == "https://www.battlewordle.app"
+				for _, allowedOrigin := range config.Server.AllowedOrigins {
+					if origin == allowedOrigin {
+						return true
+					}
+				}
+				log.Printf("Rejected WebSocket connection from origin: %s", origin)
+				return false
 			},
 		},
 	}
@@ -86,7 +94,7 @@ func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Reque
 	// Get or create the game
 	game, err := h.gameService.GetGame(gameId)
 	if err != nil {
-		if err == models.ErrGameNotFound {
+		if err.Error() == "game not found: "+gameId {
 			// Create a new game if it doesn't exist
 			game, err = h.gameService.CreateGame(gameId)
 			if err != nil {
