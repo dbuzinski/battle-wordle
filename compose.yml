@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: ui/Dockerfile
+      args:
+        - VITE_WS_URL=${VITE_WS_URL}
+        - VITE_API_URL=${VITE_API_URL}
     ports:
       - "3000:3000"
     environment:

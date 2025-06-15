@@ -12,7 +12,12 @@ RUN npm install
 # Copy source code
 COPY ui/ .
 
-# Build the app
+# Build the app with environment variables
+ARG VITE_WS_URL
+ARG VITE_API_URL
+ENV VITE_WS_URL=$VITE_WS_URL
+ENV VITE_API_URL=$VITE_API_URL
+
 RUN npm run build
 
 # Production stage
