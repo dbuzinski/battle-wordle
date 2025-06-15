@@ -37,10 +37,9 @@ func main() {
 	wsHandler := handlers.NewWebSocketHandler(gameService, matchmakingService, cfg)
 
 	// Set up routes
-	http.HandleFunc("/api/stats", httpHandler.HandleStats)
 	http.HandleFunc("/api/set-player-name", httpHandler.HandleSetPlayerName)
 	http.HandleFunc("/api/recent-games", httpHandler.HandleRecentGames)
-	http.HandleFunc("/api/head-to-head-stats", httpHandler.HandleHeadToHeadStats)
+	http.HandleFunc("/api/stats", httpHandler.HandleStats)
 	http.HandleFunc("/ws", wsHandler.HandleConnection)
 
 	// Start server

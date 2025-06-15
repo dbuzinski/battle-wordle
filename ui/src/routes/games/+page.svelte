@@ -176,7 +176,7 @@
       try {
         const opponentId = playerIds.find(id => id !== playerId);
         if (opponentId) {
-          const response = await fetch(`${import.meta.env.VITE_API_URL}/head-to-head-stats?playerId=${playerId}&opponentId=${opponentId}`);
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/stats?playerId=${playerId}&opponentId=${opponentId}`);
           if (response.ok) {
             const stats = await response.json();
             playerStats[playerId] = stats;

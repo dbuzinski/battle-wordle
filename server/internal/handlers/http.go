@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -45,44 +44,6 @@ func (h *HTTPHandler) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		next(w, r)
 	}
-}
-
-// HandleStats handles player stats requests
-func (h *HTTPHandler) HandleStats(w http.ResponseWriter, r *http.Request) {
-	h.corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		playerId := r.URL.Query().Get("playerId")
-		if playerId == "" {
-			http.Error(w, "Player ID is required", http.StatusBadRequest)
-			return
-		}
-
-		wins, losses, draws, err := h.gameService.GetPlayerStats(playerId)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]int{
-					"wins":   0,
-					"losses": 0,
-					"draws":  0,
-				})
-				return
-			}
-			http.Error(w, "Error fetching player stats", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]int{
-			"wins":   wins,
-			"losses": losses,
-			"draws":  draws,
-		})
-	})(w, r)
 }
 
 // HandleSetPlayerName handles setting player names
@@ -142,8 +103,8 @@ func (h *HTTPHandler) HandleRecentGames(w http.ResponseWriter, r *http.Request) 
 	})(w, r)
 }
 
-// HandleHeadToHeadStats handles head-to-head stats requests
-func (h *HTTPHandler) HandleHeadToHeadStats(w http.ResponseWriter, r *http.Request) {
+// HandleStats handles head-to-head stats requests
+func (h *HTTPHandler) HandleStats(w http.ResponseWriter, r *http.Request) {
 	h.corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

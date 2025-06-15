@@ -9,26 +9,13 @@ import (
 type Config struct {
 	Env     string       `json:"env"`
 	NodeEnv string       `json:"nodeEnv"`
-	UI      UIConfig     `json:"ui"`
 	Server  ServerConfig `json:"server"`
-	Nginx   NginxConfig  `json:"nginx"`
-}
-
-type UIConfig struct {
-	Port   int    `json:"port"`
-	WsUrl  string `json:"wsUrl"`
-	ApiUrl string `json:"apiUrl"`
 }
 
 type ServerConfig struct {
 	Port           int      `json:"port"`
 	DbPath         string   `json:"dbPath"`
 	AllowedOrigins []string `json:"allowedOrigins"`
-}
-
-type NginxConfig struct {
-	HttpPort  int `json:"httpPort"`
-	HttpsPort int `json:"httpsPort"`
 }
 
 var config Config
