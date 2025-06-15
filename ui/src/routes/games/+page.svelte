@@ -41,17 +41,10 @@
     let playerStats = {};
     let playerNames = {};
   
-    // Cookie management
     function getCookie(name) {
-      console.log(`[getCookie] Looking for cookie "${name}"`);
       const value = `; ${document.cookie}`;
       const parts = value.split(`; ${name}=`);
-      if (parts.length === 2) {
-        const cookieValue = parts.pop()?.split(';').shift();
-        console.log(`[getCookie] Found cookie "${name}" with value:`, cookieValue);
-        return cookieValue;
-      }
-      console.log(`[getCookie] Cookie "${name}" not found`);
+      if (parts.length === 2) return parts.pop()?.split(';').shift();
       return null;
     }
   
@@ -59,42 +52,18 @@
       const expires = new Date();
       expires.setFullYear(expires.getFullYear() + 1);
       const cookieString = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
-      console.log(`[setCookie] Setting cookie:`, cookieString);
       document.cookie = cookieString;
-  
-      // Check immediately if cookie was set
-      const checkValue = getCookie(name);
-      if (checkValue === value) {
-        console.log(`[setCookie] Cookie "${name}" successfully set.`);
-      } else {
-        console.warn(`[setCookie] Failed to set cookie "${name}". Current value:`, checkValue);
-      }
     }
   
     function getPlayerId() {
-      console.log('[getPlayerId] Start');
       const existingId = getCookie('playerId');
-      if (existingId) {
-        console.log('[getPlayerId] Returning existing playerId:', existingId);
-        return existingId;
-      }
+      if (existingId) return existingId;
   
       const newId = crypto.randomUUID();
-      console.log('[getPlayerId] No playerId found, generating new one:', newId);
       setCookie('playerId', newId);
-  
-      // Confirm it's set
-      const confirmId = getCookie('playerId');
-      if (confirmId === newId) {
-        console.log('[getPlayerId] New playerId successfully stored in cookie:', confirmId);
-      } else {
-        console.warn('[getPlayerId] Failed to store new playerId in cookie. Found:', confirmId);
-      }
-  
       return newId;
     }
   
-    // UI state
     function showMessageTemporarily(msg) {
       message = msg;
       showMessage = true;
@@ -144,7 +113,6 @@
       socket = new WebSocket(wsUrl);
       
       socket.onopen = () => {
-        console.log('WebSocket connected');
         socket.send(JSON.stringify({
           type: 'join',
           from: playerId
@@ -171,15 +139,8 @@
     }
   
     function handleGameState(msg) {
-      console.log('[handleGameState] Received game state:', msg);
       playerIds = msg.players || [];
       playerNames = msg.playerNames || {};
-      console.log('[handleGameState] Player IDs:', playerIds);
-      console.log('[handleGameState] Player Names:', playerNames);
-      console.log('[handleGameState] Current player ID:', playerId);
-      console.log('[handleGameState] Opponent ID:', playerIds.find(id => id !== playerId));
-      console.log('[handleGameState] Opponent Name:', playerNames[playerIds.find(id => id !== playerId)]);
-      
       isSpectator = !playerIds.includes(playerId);
       isMyTurn = !isSpectator && msg.currentPlayer === playerId;
       
@@ -194,13 +155,10 @@
         initializeBoard();
       }
       
-      // Store rematch game ID if available
       if (msg.rematchGameId) {
         rematchGameId = msg.rematchGameId;
-        console.log('[handleGameState] Set rematch game ID:', rematchGameId);
       }
       
-      // Show game over screen if the game is over
       if (msg.gameOver) {
         handleGameOver(msg);
       } else {
@@ -210,7 +168,6 @@
       
       updateTurnStatus(msg);
   
-      // Fetch player stats when game starts
       if (playerIds.length === 2 && !isSpectator) {
         fetchPlayerStats();
       }
@@ -233,23 +190,18 @@
     }
   
     function handleGameOver(msg) {
-      console.log('[handleGameOver] Received game over message:', msg);
       isGameOver = true;
       isMyTurn = false;
       solution = msg.solution;
       allGuesses = msg.guesses || [];
       rematchGameId = msg.rematchGameId;
-      console.log('[handleGameOver] Set rematch game ID:', rematchGameId);
       
-      // Update player info
       playerIds = msg.players || [];
       playerNames = msg.playerNames || {};
       isSpectator = !playerIds.includes(playerId);
       
-      // Update the board with the final state
       updateBoard();
       
-      // Fetch updated stats after game over
       if (msg.players.includes(playerId)) {
         fetchPlayerStats();
       }
@@ -290,35 +242,25 @@
     }
   
     function startRematch() {
-      console.log('[startRematch] Attempting to start rematch with ID:', rematchGameId);
-      if (!rematchGameId) {
-        console.error('[startRematch] No rematch game ID available');
-        return;
-      }
+      if (!rematchGameId) return;
       
       const previousGameId = gameId;
       gameId = rematchGameId;
-      console.log('[startRematch] Switching from game', previousGameId, 'to rematch game', gameId);
       
-      // Update URL
       const url = new URL(window.location.href);
       url.searchParams.set('game', gameId);
       url.searchParams.set('rematch', 'true');
       url.searchParams.set('previousGame', previousGameId);
       window.history.pushState({}, '', url);
       
-      // Reset game state
       resetGameState();
       
-      // Connect to rematch game
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
-      console.log('[startRematch] Connecting to WebSocket:', wsUrl);
       
       socket = new WebSocket(wsUrl);
       
       socket.onopen = () => {
-        console.log('WebSocket connected for rematch');
         socket.send(JSON.stringify({
           type: 'join',
           from: playerId
@@ -344,7 +286,6 @@
       };
     }
   
-    // Game logic
     function getGuessStatuses(guess, solution) {
       if (!solution) return Array(guess.length).fill('absent');
       
@@ -352,7 +293,6 @@
       const solutionChars = solution.split('');
       const taken = Array(guess.length).fill(false);
   
-      // First pass: mark correct letters
       for (let i = 0; i < guess.length; i++) {
         if (guess[i].toUpperCase() === solution[i]) {
           statuses[i] = 'correct';
@@ -360,7 +300,6 @@
         }
       }
   
-      // Second pass: mark present letters
       for (let i = 0; i < guess.length; i++) {
         if (statuses[i] === 'correct') continue;
         const idx = solutionChars.findIndex((c, j) => c === guess[i].toUpperCase() && !taken[j]);
@@ -505,7 +444,6 @@
       return current;
     }
   
-    // Input handling
     function handleKey(e) {
       if (isGameOver || isSpectator || !isMyTurn || isMenuOpen) return;
   
@@ -556,7 +494,6 @@
       handleKey({ key, preventDefault: () => {} });
     }
   
-    // UI helpers
     function getTileColor(row, col) {
       const status = statuses[row]?.[col];
       if (status === 'correct') return '#538d4e';
@@ -576,16 +513,13 @@
     async function findMatch() {
       if (isInQueue) return;
       
-      // Reset game state before starting matchmaking
       resetGameState();
       isInQueue = true;
       closeMenu();
       
-      // Get player name from cookie
       const playerName = getCookie('playerName');
       if (playerName) {
         try {
-          // Save name to database before entering queue
           const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
           const response = await fetch(`${serverUrl}//${window.location.hostname}:8080/api/set-player-name`, {
             method: 'POST',
@@ -604,7 +538,6 @@
             return;
           }
           
-          // Wait a moment to ensure the name is saved in the database
           await new Promise(resolve => setTimeout(resolve, 100));
         } catch (error) {
           console.error('Error saving player name before matchmaking:', error);
@@ -613,14 +546,12 @@
         }
       }
       
-      // Connect to queue WebSocket
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws`;
       
       queueSocket = new WebSocket(wsUrl);
       
       queueSocket.onopen = () => {
-        console.log('Queue WebSocket connected');
         queueSocket.send(JSON.stringify({
           type: 'queue',
           from: playerId
@@ -629,23 +560,18 @@
   
       queueSocket.onmessage = (event) => {
         const msg = JSON.parse(event.data);
-        console.log('Queue message received:', msg);
         
         if (msg.type === 'match_found') {
-          console.log('Match found with player names:', msg.playerNames);
           isInQueue = false;
           gameId = msg.gameId;
           
-          // Update URL
           const url = new URL(window.location.href);
           url.searchParams.set('game', gameId);
           window.history.pushState({}, '', url);
           
-          // Close queue socket
           queueSocket.close();
           queueSocket = null;
           
-          // Initialize game socket
           initializeWebSocket();
         }
       };
@@ -657,13 +583,11 @@
       };
   
       queueSocket.onclose = () => {
-        console.log('Queue WebSocket connection closed');
         isInQueue = false;
         queueSocket = null;
       };
     }
   
-    // Initialize game
     onMount(() => {
       if (browser) {
         playerId = getPlayerId();

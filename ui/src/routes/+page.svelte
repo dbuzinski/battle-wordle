@@ -59,14 +59,6 @@
     document.cookie = cookieString;
   }
 
-  function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-  }
-
   // Load player name from cookie
   onMount(() => {
     if (browser) {
@@ -78,12 +70,10 @@
 
   function loadRecentGames() {
     const playerId = getCookie('playerId');
-    console.log('Loading recent games for playerId:', playerId);
     
     if (!playerId) {
-      console.log('No playerId found, generating new one');
       // Generate a new player ID if one doesn't exist
-      const newPlayerId = generateUUID();
+      const newPlayerId = crypto.randomUUID();
       setCookie('playerId', newPlayerId);
       
       // Save the player name with the new ID
@@ -101,23 +91,16 @@
         console.error('Error saving player name:', error);
       });
 
-      // No need to load recent games for a new player
       return;
     }
 
     const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    console.log('Fetching recent games from:', `${serverUrl}//${window.location.hostname}:8080/api/recent-games?playerId=${playerId}`);
-    
     fetch(`${serverUrl}//${window.location.hostname}:8080/api/recent-games?playerId=${playerId}`)
-      .then(response => {
-        console.log('Recent games response status:', response.status);
-        return response.json();
-      })
+      .then(response => response.json())
       .then(games => {
-        console.log('Received games:', games);
         recentGames = games || [];
         totalPages = Math.ceil(recentGames.length / gamesPerPage);
-        currentPage = 1; // Reset to first page when loading new games
+        currentPage = 1;
       })
       .catch(error => {
         console.error('Error loading recent games:', error);
@@ -146,29 +129,15 @@
   }
 
   function getGameStatus(game: Game): string {
-    console.log('Getting game status for game:', game);
-    if (!game) {
-      console.log('Game is null/undefined');
-      return '';
-    }
+    if (!game) return '';
     
-    // If there's a loser, the game is finished
     if (game.loserId) {
-      const status = game.loserId === getCookie('playerId') ? 'Lost' : 'Won';
-      console.log('Game is finished, status:', status);
-      return status;
+      return game.loserId === getCookie('playerId') ? 'Lost' : 'Won';
     }
     
-    // Game is in progress
     const currentPlayerId = getCookie('playerId');
     if (game.isInProgress) {
-      if (game.currentPlayer === currentPlayerId) {
-        console.log('Game in progress, your turn');
-        return 'Your Turn';
-      } else {
-        console.log('Game in progress, opponent\'s turn');
-        return 'Opponent\'s Turn';
-      }
+      return game.currentPlayer === currentPlayerId ? 'Your Turn' : 'Opponent\'s Turn';
     }
     
     return 'Draw';
@@ -214,7 +183,6 @@
       playerName = newPlayerName.trim();
       setCookie('playerName', playerName);
       
-      // Save name to database
       const playerId = getCookie('playerId');
       if (playerId) {
         try {
@@ -255,6 +223,7 @@
   }
 
   function handleRematch() {
+    const rematchGameId = getCookie('rematchGameId');
     if (rematchGameId) {
       window.location.href = `/games/${rematchGameId}`;
     }
