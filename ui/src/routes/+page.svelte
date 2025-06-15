@@ -1,11 +1,24 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
+
+  interface Game {
+    id: string;
+    date: string;
+    loserId: string | null;
+    currentPlayer: string;
+    opponentName: string;
+    opponentId: string;
+    isInProgress: boolean;
+    guesses: string[];
+    solution?: string;
+    gameOver?: boolean;
+  }
 
   let playerName = '';
   let newPlayerName = '';
   let isEditingName = false;
-  let recentGames = [];
+  let recentGames: Game[] = [];
 
   const adjectives = [
     'Silly', 'Bouncy', 'Wiggly', 'Giggly', 'Wobbly', 'Fluffy', 'Bumpy', 'Jumpy',
@@ -23,14 +36,14 @@
     return `${randomAdj}${randomNoun}`;
   }
 
-  function getCookie(name) {
+  function getCookie(name: string): string | null {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
     if (parts.length === 2) return parts.pop()?.split(';').shift() || null;
     return null;
   }
 
-  function setCookie(name, value) {
+  function setCookie(name: string, value: string): void {
     const expires = new Date();
     expires.setFullYear(expires.getFullYear() + 1);
     const cookieString = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
@@ -101,7 +114,7 @@
       });
   }
 
-  function getGameStatus(game) {
+  function getGameStatus(game: Game): string {
     console.log('Getting game status for game:', game);
     if (!game) {
       console.log('Game is null/undefined');
@@ -117,13 +130,31 @@
     
     // Game is in progress
     const currentPlayerId = getCookie('playerId');
-    if (game.currentPlayer === currentPlayerId) {
-      console.log('Game in progress, your turn');
-      return 'Your Turn';
-    } else {
-      console.log('Game in progress, opponent\'s turn');
-      return 'Opponent\'s Turn';
+    if (game.isInProgress) {
+      if (game.currentPlayer === currentPlayerId) {
+        console.log('Game in progress, your turn');
+        return 'Your Turn';
+      } else {
+        console.log('Game in progress, opponent\'s turn');
+        return 'Opponent\'s Turn';
+      }
     }
+    
+    return 'Draw';
+  }
+
+  function getGameStatusClass(game: Game): string {
+    const status = getGameStatus(game).toLowerCase();
+    if (status === 'your turn') return 'your-turn';
+    if (status === 'opponent\'s turn') return 'opponent-turn';
+    return status;
+  }
+
+  function getGameStatusText(game: Game): string {
+    const status = getGameStatus(game);
+    if (status === 'Your Turn') return 'Your Turn';
+    if (status === 'Opponent\'s Turn') return 'Opponent\'s Turn';
+    return status;
   }
 
   function startEditingName() {
@@ -220,13 +251,13 @@
       <h2>Recent Games</h2>
       <div class="games-list">
         {#each recentGames as game}
-          <div class="game-item">
+          <a href="/games?game={game.id}" class="game-item">
             <div class="game-info">
-              <span class="opponent">vs {game.opponentName}</span>
-              <span class="result {getGameStatus(game).toLowerCase()}">{getGameStatus(game)}</span>
+              <span class="opponent">{game.opponentName}</span>
+              <span class="result {getGameStatusClass(game)}">{getGameStatusText(game)}</span>
             </div>
             <div class="game-date">{game.date}</div>
-          </div>
+          </a>
         {/each}
       </div>
     </div>
@@ -380,6 +411,13 @@
     padding: 1rem;
     background: rgba(0, 0, 0, 0.2);
     border-radius: 4px;
+    text-decoration: none;
+    color: inherit;
+    transition: background-color 0.2s ease;
+  }
+
+  .game-item:hover {
+    background: rgba(0, 0, 0, 0.3);
   }
 
   .game-info {
@@ -398,6 +436,15 @@
     font-size: 0.9rem;
   }
 
+  .result.your-turn {
+    background: #538d4e;
+    animation: pulse 2s infinite;
+  }
+
+  .result.opponent-turn {
+    background: #b59f3b;
+  }
+
   .result.won {
     background: #538d4e;
   }
@@ -408,15 +455,6 @@
 
   .result.draw {
     background: #3a3a3c;
-  }
-
-  .result.your.turn {
-    background: #538d4e;
-    animation: pulse 2s infinite;
-  }
-
-  .result.opponent.s.turn {
-    background: #b59f3b;
   }
 
   @keyframes pulse {

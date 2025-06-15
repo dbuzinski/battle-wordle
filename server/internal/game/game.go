@@ -79,6 +79,8 @@ func (s *Service) GetGame(id string) (*models.Game, error) {
 
 // CreateGame creates a new game with the specified ID
 func (s *Service) CreateGame(gameId string) (*models.Game, error) {
+	log.Printf("[CreateGame] Creating new game with ID: %s", gameId)
+
 	game := &models.Game{
 		Id:          gameId,
 		Solution:    s.getRandomWord(),
@@ -88,20 +90,62 @@ func (s *Service) CreateGame(gameId string) (*models.Game, error) {
 		GameOver:    false,
 	}
 
+	// Store the game in the database immediately
+	guessesJson, err := json.Marshal(game.Guesses)
+	if err != nil {
+		log.Printf("[CreateGame] Error marshaling guesses: %v", err)
+		return nil, fmt.Errorf("error marshaling guesses: %w", err)
+	}
+
+	log.Printf("[CreateGame] Storing game in database: id=%s, solution=%s, currentPlayer=%s, gameOver=%v",
+		gameId, game.Solution, models.PLACEHOLDER, false)
+
+	// Start a transaction
+	tx, err := s.db.Begin()
+	if err != nil {
+		log.Printf("[CreateGame] Error starting transaction: %v", err)
+		return nil, fmt.Errorf("error starting transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Insert the game
+	_, err = tx.Exec(`
+		INSERT INTO games (
+			id, 
+			solution, 
+			current_player,
+			game_over,
+			guesses
+		) VALUES (?, ?, ?, ?, ?)
+	`, gameId, game.Solution, models.PLACEHOLDER, false, string(guessesJson))
+	if err != nil {
+		log.Printf("[CreateGame] Error storing game in database: %v", err)
+		return nil, fmt.Errorf("error storing game in database: %w", err)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		log.Printf("[CreateGame] Error committing transaction: %v", err)
+		return nil, fmt.Errorf("error committing transaction: %w", err)
+	}
+
 	s.mutex.Lock()
 	s.games[game.Id] = game
 	s.mutex.Unlock()
 
-	log.Printf("New game created with ID: %s, solution: %s", game.Id, game.Solution)
+	log.Printf("[CreateGame] Successfully created game %s with solution %s", game.Id, game.Solution)
 	return game, nil
 }
 
 // JoinGame handles a player joining a game
 func (s *Service) JoinGame(gameId string, playerId string, conn *websocket.Conn) error {
+	log.Printf("[JoinGame] Player %s joining game %s", playerId, gameId)
+
 	s.mutex.Lock()
 	game, exists := s.games[gameId]
 	if !exists {
 		s.mutex.Unlock()
+		log.Printf("[JoinGame] Game %s not found", gameId)
 		return models.ErrGameNotFound
 	}
 
@@ -109,11 +153,40 @@ func (s *Service) JoinGame(gameId string, playerId string, conn *websocket.Conn)
 	if len(game.Players) < 2 {
 		if !contains(game.Players, playerId) {
 			game.Players = append(game.Players, playerId)
+
+			// Store player association in database
+			_, err := s.db.Exec(`
+				INSERT INTO game_players (game_id, player_id)
+				VALUES (?, ?)
+			`, gameId, playerId)
+			if err != nil {
+				log.Printf("[JoinGame] Error storing player association: %v", err)
+				return fmt.Errorf("error storing player association: %w", err)
+			}
+			log.Printf("[JoinGame] Stored player association for player %s in game %s", playerId, gameId)
 		}
 		if game.CurrentPlayer == "" {
 			game.CurrentPlayer = playerId
+			// Update current player in database
+			_, err := s.db.Exec(`
+				UPDATE games SET current_player = ? WHERE id = ?
+			`, playerId, gameId)
+			if err != nil {
+				log.Printf("[JoinGame] Error updating current player: %v", err)
+				return fmt.Errorf("error updating current player: %w", err)
+			}
+			log.Printf("[JoinGame] Set current player to %s for game %s", playerId, gameId)
 		} else if game.CurrentPlayer == models.PLACEHOLDER {
 			game.CurrentPlayer = playerId
+			// Update current player in database
+			_, err := s.db.Exec(`
+				UPDATE games SET current_player = ? WHERE id = ?
+			`, playerId, gameId)
+			if err != nil {
+				log.Printf("[JoinGame] Error updating current player: %v", err)
+				return fmt.Errorf("error updating current player: %w", err)
+			}
+			log.Printf("[JoinGame] Set current player to %s for game %s", playerId, gameId)
 		}
 	}
 	s.mutex.Unlock()
@@ -122,29 +195,43 @@ func (s *Service) JoinGame(gameId string, playerId string, conn *websocket.Conn)
 
 // MakeGuess handles a player making a guess
 func (s *Service) MakeGuess(gameId string, playerId string, guess string) error {
+	log.Printf("[MakeGuess] Player %s making guess in game %s: %s", playerId, gameId, guess)
+
 	s.mutex.Lock()
 	game, exists := s.games[gameId]
 	if !exists {
 		s.mutex.Unlock()
+		log.Printf("[MakeGuess] Game %s not found", gameId)
 		return models.ErrGameNotFound
 	}
 
 	if game.GameOver {
 		s.mutex.Unlock()
+		log.Printf("[MakeGuess] Game %s is already over", gameId)
 		return models.ErrGameOver
 	}
 
 	if game.CurrentPlayer != playerId {
 		s.mutex.Unlock()
+		log.Printf("[MakeGuess] Not player %s's turn in game %s", playerId, gameId)
 		return models.ErrNotYourTurn
 	}
 
 	if len(game.Guesses) > 0 && len(game.Players) < 2 {
 		s.mutex.Unlock()
+		log.Printf("[MakeGuess] Waiting for opponent in game %s", gameId)
 		return models.ErrWaitingForOpponent
 	}
 
 	game.Guesses = append(game.Guesses, guess)
+	log.Printf("[MakeGuess] Added guess to game %s, total guesses: %d", gameId, len(game.Guesses))
+
+	// Update guesses in database
+	guessesJson, err := json.Marshal(game.Guesses)
+	if err != nil {
+		log.Printf("[MakeGuess] Error marshaling guesses: %v", err)
+		return fmt.Errorf("error marshaling guesses: %w", err)
+	}
 
 	if strings.ToUpper(guess) == game.Solution {
 		game.GameOver = true
@@ -174,6 +261,25 @@ func (s *Service) MakeGuess(gameId string, playerId string, guess string) error 
 			}
 		}
 	}
+
+	// Update game state in database
+	log.Printf("[MakeGuess] Updating game state in database: id=%s, currentPlayer=%s, gameOver=%v, loserId=%s",
+		gameId, game.CurrentPlayer, game.GameOver, game.LoserId)
+
+	_, err = s.db.Exec(`
+		UPDATE games 
+		SET guesses = ?,
+			current_player = ?,
+			game_over = ?,
+			loser_id = ?
+		WHERE id = ?
+	`, string(guessesJson), game.CurrentPlayer, game.GameOver, game.LoserId, gameId)
+	if err != nil {
+		log.Printf("[MakeGuess] Error updating game state in database: %v", err)
+		return fmt.Errorf("error updating game state in database: %w", err)
+	}
+
+	log.Printf("[MakeGuess] Successfully updated game state in database for game %s", gameId)
 	s.mutex.Unlock()
 	return nil
 }
@@ -197,9 +303,70 @@ func (s *Service) HandleGameOver(game *models.Game) error {
 	game.RematchGameId = rematchGame.Id
 	s.mutex.Unlock()
 
-	// Record the game in the database
-	if err := s.recordGame(game.Id, game.Solution, game.LoserId, game.Players); err != nil {
-		return err
+	// Update game state in database
+	guessesJson, err := json.Marshal(game.Guesses)
+	if err != nil {
+		log.Printf("[HandleGameOver] Error marshaling guesses: %v", err)
+		return fmt.Errorf("error marshaling guesses: %w", err)
+	}
+
+	_, err = s.db.Exec(`
+		UPDATE games 
+		SET game_over = true,
+			loser_id = ?,
+			guesses = ?,
+			current_player = ?,
+			rematch_game_id = ?
+		WHERE id = ?
+	`, game.LoserId, string(guessesJson), game.CurrentPlayer, rematchGame.Id, game.Id)
+	if err != nil {
+		log.Printf("[HandleGameOver] Error updating game state in database: %v", err)
+		return fmt.Errorf("error updating game state in database: %w", err)
+	}
+
+	// Update player stats if there's a loser
+	if game.LoserId != "" {
+		// Update loser's losses
+		_, err = s.db.Exec(`
+			UPDATE players
+			SET losses = losses + 1
+			WHERE id = ?
+		`, game.LoserId)
+		if err != nil {
+			log.Printf("[HandleGameOver] Error updating loser stats: %v", err)
+			return fmt.Errorf("error updating loser stats: %w", err)
+		}
+		log.Printf("[HandleGameOver] Successfully updated loser stats for player %s", game.LoserId)
+
+		// Update winner's wins
+		winnerId := game.Players[0]
+		if winnerId == game.LoserId {
+			winnerId = game.Players[1]
+		}
+		_, err = s.db.Exec(`
+			UPDATE players
+			SET wins = wins + 1
+			WHERE id = ?
+		`, winnerId)
+		if err != nil {
+			log.Printf("[HandleGameOver] Error updating winner stats: %v", err)
+			return fmt.Errorf("error updating winner stats: %w", err)
+		}
+		log.Printf("[HandleGameOver] Successfully updated winner stats for player %s", winnerId)
+	} else {
+		// Update draws for both players
+		for _, playerId := range game.Players {
+			_, err = s.db.Exec(`
+				UPDATE players
+				SET draws = draws + 1
+				WHERE id = ?
+			`, playerId)
+			if err != nil {
+				log.Printf("[HandleGameOver] Error updating draw stats for player %s: %v", playerId, err)
+				return fmt.Errorf("error updating draw stats: %w", err)
+			}
+			log.Printf("[HandleGameOver] Successfully updated draw stats for player %s", playerId)
+		}
 	}
 
 	// Broadcast game over message with rematch game ID
@@ -287,9 +454,18 @@ func (s *Service) SetPlayerName(playerId string, name string) error {
 
 // GetRecentGames returns a player's recent games
 func (s *Service) GetRecentGames(playerId string) ([]map[string]interface{}, error) {
+	log.Printf("[GetRecentGames] Fetching games for player %s", playerId)
+
 	rows, err := s.db.Query(`
 		WITH player_games AS (
-			SELECT g.id, g.created_at, g.loser_id, g.current_player, gp2.player_id as opponent_id
+			SELECT 
+				g.id, 
+				g.created_at, 
+				g.loser_id, 
+				g.current_player, 
+				g.game_over,
+				g.guesses,
+				gp2.player_id as opponent_id
 			FROM games g
 			JOIN game_players gp1 ON g.id = gp1.game_id AND gp1.player_id = ?
 			JOIN game_players gp2 ON g.id = gp2.game_id AND gp2.player_id != ?
@@ -299,6 +475,8 @@ func (s *Service) GetRecentGames(playerId string) ([]map[string]interface{}, err
 			pg.created_at,
 			pg.loser_id,
 			pg.current_player,
+			pg.game_over,
+			pg.guesses,
 			COALESCE(p.name, 'Player') as opponent_name,
 			pg.opponent_id
 		FROM player_games pg
@@ -307,6 +485,7 @@ func (s *Service) GetRecentGames(playerId string) ([]map[string]interface{}, err
 		LIMIT 50
 	`, playerId, playerId)
 	if err != nil {
+		log.Printf("[GetRecentGames] Error querying games: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -315,17 +494,40 @@ func (s *Service) GetRecentGames(playerId string) ([]map[string]interface{}, err
 	for rows.Next() {
 		var id, loserId, currentPlayer, opponentName, opponentId string
 		var createdAt time.Time
+		var gameOver bool
+		var guessesJson sql.NullString
 		if err := rows.Scan(
 			&id,
 			&createdAt,
 			&loserId,
 			&currentPlayer,
+			&gameOver,
+			&guessesJson,
 			&opponentName,
 			&opponentId,
 		); err != nil {
-			log.Printf("Error scanning game row: %v", err)
+			log.Printf("[GetRecentGames] Error scanning game row: %v", err)
 			continue
 		}
+
+		log.Printf("[GetRecentGames] Found game %s: currentPlayer=%s, gameOver=%v, loserId=%s",
+			id, currentPlayer, gameOver, loserId)
+
+		// Parse guesses from JSON
+		var guesses []string
+		if guessesJson.Valid {
+			if err := json.Unmarshal([]byte(guessesJson.String), &guesses); err != nil {
+				log.Printf("[GetRecentGames] Error unmarshaling guesses: %v", err)
+				guesses = []string{}
+			}
+			log.Printf("[GetRecentGames] Game %s has %d guesses", id, len(guesses))
+		}
+
+		// Get the game from memory to check if it's still active
+		gameState, _ := s.GetGame(id)
+		isInProgress := gameState != nil && !gameState.GameOver
+		log.Printf("[GetRecentGames] Game %s in memory: %v, isInProgress: %v",
+			id, gameState != nil, isInProgress)
 
 		game := map[string]interface{}{
 			"id":            id,
@@ -334,10 +536,22 @@ func (s *Service) GetRecentGames(playerId string) ([]map[string]interface{}, err
 			"currentPlayer": currentPlayer,
 			"opponentName":  opponentName,
 			"opponentId":    opponentId,
+			"isInProgress":  isInProgress,
+			"guesses":       guesses,
+			"gameOver":      gameOver,
 		}
+
+		// Add game state if it's in memory
+		if gameState != nil {
+			game["solution"] = gameState.Solution
+			log.Printf("[GetRecentGames] Added game state for game %s: guesses=%v, solution=%s, gameOver=%v",
+				id, gameState.Guesses, gameState.Solution, gameState.GameOver)
+		}
+
 		games = append(games, game)
 	}
 
+	log.Printf("[GetRecentGames] Returning %d games for player %s", len(games), playerId)
 	return games, rows.Err()
 }
 

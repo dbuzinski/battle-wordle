@@ -48,15 +48,24 @@ func createTables(db *sql.DB) error {
 		return err
 	}
 
-	// Create games table
+	// Drop and recreate games table to ensure it has all required columns
+	_, err = db.Exec(`DROP TABLE IF EXISTS games`)
+	if err != nil {
+		return err
+	}
+
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS games (
+		CREATE TABLE games (
 			id TEXT PRIMARY KEY,
 			solution TEXT NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			loser_id TEXT,
 			current_player TEXT,
-			FOREIGN KEY (loser_id) REFERENCES players(id)
+			game_over BOOLEAN DEFAULT FALSE,
+			guesses TEXT,
+			rematch_game_id TEXT,
+			FOREIGN KEY (loser_id) REFERENCES players(id),
+			FOREIGN KEY (rematch_game_id) REFERENCES games(id)
 		)
 	`)
 	if err != nil {

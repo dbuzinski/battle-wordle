@@ -72,6 +72,29 @@ func (s *MatchmakingService) AddToQueue(playerId string, conn *websocket.Conn) {
 		}
 		game.CurrentPlayer = game.Players[0]
 
+		// Store player associations in database
+		for _, playerId := range game.Players {
+			_, err := s.gameService.db.Exec(`
+				INSERT INTO game_players (game_id, player_id)
+				VALUES (?, ?)
+			`, gameId, playerId)
+			if err != nil {
+				log.Printf("Error storing player association for player %s: %v", playerId, err)
+				return
+			}
+			log.Printf("Stored player association for player %s in game %s", playerId, gameId)
+		}
+
+		// Update current player in database
+		_, err = s.gameService.db.Exec(`
+			UPDATE games SET current_player = ? WHERE id = ?
+		`, game.CurrentPlayer, gameId)
+		if err != nil {
+			log.Printf("Error updating current player: %v", err)
+			return
+		}
+		log.Printf("Set current player to %s for game %s", game.CurrentPlayer, gameId)
+
 		log.Printf("Match found! Game ID: %s, Players: %v, First player: %s, Solution: %s",
 			gameId, game.Players, game.CurrentPlayer, game.Solution)
 
