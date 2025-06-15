@@ -29,7 +29,7 @@ func NewWebSocketHandler(gameService *game.Service, matchmakingService *game.Mat
 			CheckOrigin: func(r *http.Request) bool {
 				origin := r.Header.Get("Origin")
 				return origin == "https://battlewordle.app" ||
-					origin == "https://www.battlewordle.app" ||
+					origin == "https://www.battlewordle.app"
 			},
 		},
 	}
