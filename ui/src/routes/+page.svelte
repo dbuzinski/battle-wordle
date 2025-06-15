@@ -592,18 +592,18 @@
   }
 
   .opponent-header {
-    width: 100px;
+    min-width: 100px;
     flex: 1;
   }
 
   .result-header {
-    width: 80px;
+    min-width: 80px;
     text-align: left;
     padding: 0 4rem;
   }
 
   .date-header {
-    width: 80px;
+    min-width: 80px;
     text-align: right;
   }
 
@@ -612,29 +612,35 @@
     align-items: center;
     gap: 1rem;
     flex: 1;
+    min-width: 0;
   }
 
   .opponent {
     font-weight: bold;
-    width: 100px;
+    min-width: 100px;
     flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .result {
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
     font-size: 0.9rem;
-    width: 80px;
+    min-width: 80px;
     text-align: left;
     display: inline-block;
     margin: 0 4rem;
+    white-space: nowrap;
   }
 
   .game-date {
     color: #818384;
     font-size: 0.9rem;
-    width: 80px;
+    min-width: 80px;
     text-align: right;
+    white-space: nowrap;
   }
 
   .status-won {
