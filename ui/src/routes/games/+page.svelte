@@ -789,8 +789,8 @@
             <button class="game-over-btn rematch" on:click={startRematch}>
               Rematch
             </button>
-            <button class="game-over-btn new-game" on:click={startNewGame}>
-              New Game
+            <button class="game-over-btn find-match" on:click={findMatch}>
+              Find Match
             </button>
           </div>
         {/if}

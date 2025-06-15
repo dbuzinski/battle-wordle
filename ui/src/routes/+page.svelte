@@ -19,6 +19,15 @@
   let newPlayerName = '';
   let isEditingName = false;
   let recentGames: Game[] = [];
+  let gameOver = false;
+  let loserId = '';
+  let solution = '';
+  let rematchGameId = '';
+  let socket: WebSocket | null = null;
+  let gameId = '';
+  let currentPage = 1;
+  const gamesPerPage = 10;
+  let totalPages = 1;
 
   const adjectives = [
     'Silly', 'Bouncy', 'Wiggly', 'Giggly', 'Wobbly', 'Fluffy', 'Bumpy', 'Jumpy',
@@ -107,11 +116,33 @@
       .then(games => {
         console.log('Received games:', games);
         recentGames = games || [];
+        totalPages = Math.ceil(recentGames.length / gamesPerPage);
+        currentPage = 1; // Reset to first page when loading new games
       })
       .catch(error => {
         console.error('Error loading recent games:', error);
         recentGames = [];
+        totalPages = 1;
+        currentPage = 1;
       });
+  }
+
+  function getPaginatedGames() {
+    const startIndex = (currentPage - 1) * gamesPerPage;
+    const endIndex = startIndex + gamesPerPage;
+    return recentGames.slice(startIndex, endIndex);
+  }
+
+  function nextPage() {
+    if (currentPage < totalPages) {
+      currentPage++;
+    }
+  }
+
+  function previousPage() {
+    if (currentPage > 1) {
+      currentPage--;
+    }
   }
 
   function getGameStatus(game: Game): string {
@@ -222,6 +253,36 @@
   function findMatch() {
     window.location.href = '/matchmaking';
   }
+
+  function handleRematch() {
+    if (rematchGameId) {
+      window.location.href = `/games/${rematchGameId}`;
+    }
+  }
+
+  function handleFindMatch() {
+    window.location.href = '/matchmaking';
+  }
+
+  // Initialize socket and set up message handler
+  onMount(() => {
+    // Get game ID from URL
+    const pathParts = window.location.pathname.split('/');
+    gameId = pathParts[pathParts.length - 1];
+    
+    socket = new WebSocket(`ws://localhost:8080/ws?game=${gameId}`);
+    
+    socket.onmessage = (event: MessageEvent) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'game_over') {
+        gameOver = true;
+        loserId = message.loserId;
+        solution = message.solution;
+        rematchGameId = message.rematchGameId;
+      }
+      // ... rest of the message handling ...
+    };
+  });
 </script>
 
 <div class="container">
@@ -273,7 +334,7 @@
           </div>
           <div class="header-label date-header">Date</div>
         </div>
-        {#each recentGames as game}
+        {#each getPaginatedGames() as game}
           <a href="/games?game={game.id}" class="game-item">
             <div class="game-info">
               <span class="opponent">{game.opponentName}</span>
@@ -282,6 +343,44 @@
             <div class="game-date">{game.date}</div>
           </a>
         {/each}
+      </div>
+      {#if totalPages > 1}
+        <div class="pagination">
+          <button 
+            class="page-btn" 
+            on:click={previousPage} 
+            disabled={currentPage === 1}
+          >
+            Previous
+          </button>
+          <span class="page-info">Page {currentPage} of {totalPages}</span>
+          <button 
+            class="page-btn" 
+            on:click={nextPage} 
+            disabled={currentPage === totalPages}
+          >
+            Next
+          </button>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  {#if gameOver}
+    <div class="game-over">
+      <h2>Game Over!</h2>
+      <p>
+        {#if loserId === getCookie('playerId')}
+          You lost! The word was {solution}.
+        {:else if loserId}
+          You won! The word was {solution}.
+        {:else}
+          It's a draw! The word was {solution}.
+        {/if}
+      </p>
+      <div class="game-over-buttons">
+        <button class="rematch" on:click={handleRematch}>Rematch</button>
+        <button class="find-match" on:click={handleFindMatch}>Find Match</button>
       </div>
     </div>
   {/if}
@@ -552,5 +651,62 @@
   .status-draw {
     color: #818384;
     font-weight: bold;
+  }
+
+  .game-over-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1rem;
+  }
+
+  .rematch, .find-match {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    background: #538d4e;
+    color: white;
+  }
+
+  .rematch:hover, .find-match:hover {
+    opacity: 0.9;
+  }
+
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .page-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    background: #538d4e;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .page-btn:disabled {
+    background: #3a3a3c;
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .page-btn:not(:disabled):hover {
+    background: #4a7d45;
+    transform: translateY(-1px);
+  }
+
+  .page-info {
+    color: #818384;
+    font-size: 0.9rem;
   }
 </style>
