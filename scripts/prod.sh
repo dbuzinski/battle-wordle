@@ -8,7 +8,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 source "$SCRIPT_DIR/set-env.sh" prod
 
 # Stop any existing containers
-cd "$PROJECT_ROOT" && docker compose down
+cd "$PROJECT_ROOT" && docker compose --env-file .env down
 
 # Start the services
-cd "$PROJECT_ROOT" && docker compose up --build -d
+cd "$PROJECT_ROOT" && docker compose --env-file .env up --build -d

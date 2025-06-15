@@ -20,36 +20,35 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 # Function to read JSON config and export environment variables
 set_env_from_config() {
     local config_file="$1"
+    local env_file="$2"
     
     # Read and export environment variables from JSON
-    export ENV=$(jq -r '.env' "$config_file")
-    export NODE_ENV=$(jq -r '.nodeEnv' "$config_file")
+    echo "ENV=$(jq -r '.env' "$config_file")" > "$env_file"
+    echo "NODE_ENV=$(jq -r '.nodeEnv' "$config_file")" >> "$env_file"
     
     # UI config
-    export UI_PORT=$(jq -r '.ui.port' "$config_file")
-    export VITE_WS_URL=$(jq -r '.ui.wsUrl' "$config_file")
-    export VITE_API_URL=$(jq -r '.ui.apiUrl' "$config_file")
+    echo "UI_PORT=$(jq -r '.ui.port' "$config_file")" >> "$env_file"
+    echo "VITE_WS_URL=$(jq -r '.ui.wsUrl' "$config_file")" >> "$env_file"
+    echo "VITE_API_URL=$(jq -r '.ui.apiUrl' "$config_file")" >> "$env_file"
     
     # Server config
-    export PORT=$(jq -r '.server.port' "$config_file")
-    export DB_PATH=$(jq -r '.server.dbPath' "$config_file")
+    echo "PORT=$(jq -r '.server.port' "$config_file")" >> "$env_file"
+    echo "DB_PATH=$(jq -r '.server.dbPath' "$config_file")" >> "$env_file"
     
     # Nginx config
-    export HTTP_PORT=$(jq -r '.nginx.httpPort' "$config_file")
-    export HTTPS_PORT=$(jq -r '.nginx.httpsPort' "$config_file")
+    echo "HTTP_PORT=$(jq -r '.nginx.httpPort' "$config_file")" >> "$env_file"
+    echo "HTTPS_PORT=$(jq -r '.nginx.httpsPort' "$config_file")" >> "$env_file"
 }
 
 # Set environment variables based on the argument
 case "$1" in
     "dev")
         echo "Switching to development environment..."
-        set_env_from_config "$PROJECT_ROOT/config/dev.json"
+        set_env_from_config "$PROJECT_ROOT/config/dev.json" "$PROJECT_ROOT/.env"
         ;;
     "prod")
         echo "Switching to production environment..."
-        set_env_from_config "$PROJECT_ROOT/config/prod.json"
-        # Use production nginx config
-        cp "$PROJECT_ROOT/nginx/nginx.conf" "$PROJECT_ROOT/nginx/nginx.conf"
+        set_env_from_config "$PROJECT_ROOT/config/prod.json" "$PROJECT_ROOT/.env"
         ;;
     *)
         show_usage
