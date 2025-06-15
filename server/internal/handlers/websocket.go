@@ -129,6 +129,12 @@ func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Reque
 				log.Printf("Error making guess: %v", err)
 				continue
 			}
+			// Get updated game state after guess
+			game, err = h.gameService.GetGame(gameId)
+			if err != nil {
+				log.Printf("Error getting updated game state: %v", err)
+				continue
+			}
 			h.broadcastGameState(game)
 		}
 	}
@@ -154,8 +160,13 @@ func (h *WebSocketHandler) sendGameState(game *models.Game, playerId string) {
 
 // broadcastGameState sends the current game state to all players
 func (h *WebSocketHandler) broadcastGameState(game *models.Game) {
+	msgType := models.GAME_STATE
+	if game.GameOver {
+		msgType = models.GAME_OVER
+	}
+
 	msg := &models.Message{
-		Type:          models.GAME_STATE,
+		Type:          msgType,
 		CurrentPlayer: game.CurrentPlayer,
 		Solution:      game.Solution,
 		Guesses:       game.Guesses,
@@ -164,6 +175,8 @@ func (h *WebSocketHandler) broadcastGameState(game *models.Game) {
 		LoserId:       game.LoserId,
 		RematchGameId: game.RematchGameId,
 	}
+
+	log.Printf("[broadcastGameState] Broadcasting %s message for game %s", msgType, game.Id)
 
 	for id, player := range game.Connections {
 		if err := player.WriteJSON(msg); err != nil {

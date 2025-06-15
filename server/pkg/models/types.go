@@ -2,7 +2,6 @@ package models
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -48,7 +47,6 @@ type Game struct {
 	GameOver      bool
 	LoserId       string
 	RematchGameId string
-	Mutex         sync.Mutex
 }
 
 // Player represents a player in the system

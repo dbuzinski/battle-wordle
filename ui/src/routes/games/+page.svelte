@@ -171,6 +171,7 @@
     }
   
     function handleGameState(msg) {
+      console.log('[handleGameState] Received game state:', msg);
       playerIds = msg.players || [];
       playerNames = msg.playerNames || {};
       isSpectator = !playerIds.includes(playerId);
@@ -190,6 +191,7 @@
       // Store rematch game ID if available
       if (msg.rematchGameId) {
         rematchGameId = msg.rematchGameId;
+        console.log('[handleGameState] Set rematch game ID:', rematchGameId);
       }
       
       // Show game over screen if the game is over
@@ -225,11 +227,20 @@
     }
   
     function handleGameOver(msg) {
+      console.log('[handleGameOver] Received game over message:', msg);
       isGameOver = true;
       isMyTurn = false;
       solution = msg.solution;
       allGuesses = msg.guesses || [];
       rematchGameId = msg.rematchGameId;
+      console.log('[handleGameOver] Set rematch game ID:', rematchGameId);
+      
+      // Update player info
+      playerIds = msg.players || [];
+      playerNames = msg.playerNames || {};
+      isSpectator = !playerIds.includes(playerId);
+      
+      // Update the board with the final state
       updateBoard();
       
       // Fetch updated stats after game over
@@ -273,13 +284,15 @@
     }
   
     function startRematch() {
+      console.log('[startRematch] Attempting to start rematch with ID:', rematchGameId);
       if (!rematchGameId) {
-        console.error('No rematch game ID available');
+        console.error('[startRematch] No rematch game ID available');
         return;
       }
       
       const previousGameId = gameId;
       gameId = rematchGameId;
+      console.log('[startRematch] Switching from game', previousGameId, 'to rematch game', gameId);
       
       // Update URL
       const url = new URL(window.location.href);
@@ -294,6 +307,7 @@
       // Connect to rematch game
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
+      console.log('[startRematch] Connecting to WebSocket:', wsUrl);
       
       socket = new WebSocket(wsUrl);
       
