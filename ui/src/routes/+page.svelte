@@ -144,17 +144,33 @@
   }
 
   function getGameStatusClass(game: Game): string {
-    const status = getGameStatus(game).toLowerCase();
-    if (status === 'your turn') return 'your-turn';
-    if (status === 'opponent\'s turn') return 'opponent-turn';
-    return status;
+    if (game.isInProgress) {
+      return 'status-in-progress';
+    }
+    if (game.loserId === getCookie('playerId')) {
+      return 'status-lost';
+    }
+    if (game.loserId) {
+      return 'status-won';
+    }
+    return 'status-draw';
   }
 
   function getGameStatusText(game: Game): string {
-    const status = getGameStatus(game);
-    if (status === 'Your Turn') return 'Your Turn';
-    if (status === 'Opponent\'s Turn') return 'Opponent\'s Turn';
-    return status;
+    if (game.isInProgress) {
+      if (game.currentPlayer === getCookie('playerId')) {
+        return 'Your Turn';
+      } else {
+        return 'Opponent\'s Turn';
+      }
+    }
+    if (game.loserId === getCookie('playerId')) {
+      return 'Lost';
+    }
+    if (game.loserId) {
+      return 'Won';
+    }
+    return 'Draw';
   }
 
   function startEditingName() {
@@ -238,11 +254,11 @@
   </div>
 
   <div class="game-actions">
-    <button class="action-btn new-game" on:click={startNewGame}>
-      New Game
-    </button>
     <button class="action-btn find-match" on:click={findMatch}>
       Find Match
+    </button>
+    <button class="action-btn new-game" on:click={startNewGame}>
+      New Game
     </button>
   </div>
 
@@ -250,6 +266,13 @@
     <div class="recent-games">
       <h2>Recent Games</h2>
       <div class="games-list">
+        <div class="game-header">
+          <div class="game-info">
+            <span class="header-label opponent-header">Opponent</span>
+            <span class="header-label result-header">Result</span>
+          </div>
+          <div class="header-label date-header">Date</div>
+        </div>
         {#each recentGames as game}
           <a href="/games?game={game.id}" class="game-item">
             <div class="game-info">
@@ -377,7 +400,7 @@
   }
 
   .find-match {
-    background: #b59f3b;
+    background: #538d4e;
     color: white;
   }
 
@@ -408,69 +431,126 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition: all 0.2s ease;
     text-decoration: none;
-    color: inherit;
-    transition: background-color 0.2s ease;
+    color: white;
   }
 
   .game-item:hover {
-    background: rgba(0, 0, 0, 0.3);
+    transform: translateX(5px);
+    background-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .game-item.status-won {
+    background-color: rgba(83, 141, 78, 0.2);
+  }
+
+  .game-item.status-won:hover {
+    background-color: rgba(83, 141, 78, 0.3);
+  }
+
+  .game-item.status-lost {
+    background-color: rgba(255, 77, 77, 0.2);
+  }
+
+  .game-item.status-lost:hover {
+    background-color: rgba(255, 77, 77, 0.3);
+  }
+
+  .game-item.status-in-progress {
+    background-color: rgba(181, 159, 59, 0.2);
+  }
+
+  .game-item.status-in-progress:hover {
+    background-color: rgba(181, 159, 59, 0.3);
+  }
+
+  .game-item.status-draw {
+    background-color: rgba(129, 131, 132, 0.2);
+  }
+
+  .game-item.status-draw:hover {
+    background-color: rgba(129, 131, 132, 0.3);
+  }
+
+  .game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 12px 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 12px;
+  }
+
+  .header-label {
+    color: #818384;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .opponent-header {
+    min-width: 120px;
+  }
+
+  .result-header {
+    min-width: 100px;
+    text-align: left;
+    padding: 0 0.5rem;
+  }
+
+  .date-header {
+    min-width: 100px;
+    text-align: right;
   }
 
   .game-info {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 2rem;
   }
 
   .opponent {
     font-weight: bold;
+    min-width: 120px;
   }
 
   .result {
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
     font-size: 0.9rem;
-  }
-
-  .result.your-turn {
-    background: #538d4e;
-    animation: pulse 2s infinite;
-  }
-
-  .result.opponent-turn {
-    background: #b59f3b;
-  }
-
-  .result.won {
-    background: #538d4e;
-  }
-
-  .result.lost {
-    background: #b59f3b;
-  }
-
-  .result.draw {
-    background: #3a3a3c;
-  }
-
-  @keyframes pulse {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.7;
-    }
-    100% {
-      opacity: 1;
-    }
+    min-width: 100px;
+    text-align: left;
+    display: inline-block;
   }
 
   .game-date {
     color: #818384;
     font-size: 0.9rem;
+    min-width: 100px;
+    text-align: right;
+  }
+
+  .status-won {
+    color: #538d4e;
+    font-weight: bold;
+  }
+
+  .status-lost {
+    color: #ff4d4d;
+    font-weight: bold;
+  }
+
+  .status-in-progress {
+    color: #b59f3b;
+    font-weight: bold;
+  }
+
+  .status-draw {
+    color: #818384;
+    font-weight: bold;
   }
 </style>

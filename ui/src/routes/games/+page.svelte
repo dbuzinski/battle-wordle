@@ -714,14 +714,13 @@
           <h3>Menu</h3>
         </div>
         <nav class="menu-nav">
-          <button 
-            class="menu-link" 
-            on:click={startNewGame}
-            type="button"
-            aria-label="Start new game"
+          <a 
+            href="/"
+            class="menu-link"
+            on:click={closeMenu}
           >
-            <span class="menu-text">New Game</span>
-          </button>
+            <span class="menu-text">Home</span>
+          </a>
           <button 
             class="menu-link" 
             on:click={findMatch} 
@@ -731,6 +730,14 @@
             disabled={isInQueue}
           >
             <span class="menu-text">{isInQueue ? 'Finding Match...' : 'Find Match'}</span>
+          </button>
+          <button 
+            class="menu-link" 
+            on:click={startNewGame}
+            type="button"
+            aria-label="Start new game"
+          >
+            <span class="menu-text">New Game</span>
           </button>
         </nav>
       </div>
@@ -1318,15 +1325,21 @@
       cursor: pointer;
       font-size: 1.1rem;
       letter-spacing: 0.3px;
+      background: none;
+      border: none;
+      width: 100%;
+      text-align: left;
     }
   
     .menu-link:hover {
       transform: translateX(5px);
       color: #538d4e;
+      background: none;
     }
   
     .menu-link:active {
       transform: translateX(0);
+      background: none;
     }
   
     .menu-link.disabled {
@@ -1334,11 +1347,13 @@
       cursor: not-allowed;
       transform: none !important;
       color: rgba(255, 255, 255, 0.5);
+      background: none;
     }
   
     .menu-link.disabled:hover {
       transform: none;
       color: rgba(255, 255, 255, 0.5);
+      background: none;
     }
   
     .menu-text {
