@@ -16,19 +16,10 @@ COPY ui/ .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM nginx:alpine
 
-WORKDIR /app
+COPY --from=builder /app/build /usr/share/nginx/html
+COPY ui/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy built files from builder
-COPY --from=builder /app/build ./build
-COPY --from=builder /app/package*.json ./
-
-# Install production dependencies only
-RUN npm install --production
-
-# Expose the port the app runs on
-EXPOSE 3000
-
-# Start the app
-CMD ["node", "build"] 
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"] 
