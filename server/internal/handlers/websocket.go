@@ -40,7 +40,16 @@ func NewWebSocketHandler(gameService *game.Service, matchmakingService *game.Mat
 func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	gameId := r.URL.Query().Get("game")
 
-	conn, err := h.upgrader.Upgrade(w, r, nil)
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			return origin == "https://battlewordle.app" || origin == "https://www.battlewordle.app" || origin == "http://localhost:5173"
+		},
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Error upgrading connection: %v", err)
 		return
@@ -63,33 +72,34 @@ func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Reque
 			}
 
 			if msg.Type == models.QUEUE_MSG {
-				if err := h.matchmakingService.AddToQueue(msg.From, conn); err != nil {
-					log.Printf("Error adding player to queue: %v", err)
-				}
+				h.matchmakingService.AddToQueue(msg.From, conn)
 			}
 		}
 		return
 	}
 
-	// Handle game connection
+	// Get or create the game
 	game, err := h.gameService.GetGame(gameId)
 	if err != nil {
-		log.Printf("Error getting game: %v", err)
-		conn.Close()
-		return
+		if err == models.ErrGameNotFound {
+			// Create a new game if it doesn't exist
+			game, err = h.gameService.CreateGame(gameId)
+			if err != nil {
+				log.Printf("Error creating game: %v", err)
+				conn.Close()
+				return
+			}
+			log.Printf("New game created with ID: %s, solution: %s", gameId, game.Solution)
+		} else {
+			log.Printf("Error getting game: %v", err)
+			conn.Close()
+			return
+		}
 	}
 
 	defer func() {
 		conn.Close()
-		game.Mutex.Lock()
-		for id, player := range game.Connections {
-			if player == conn {
-				delete(game.Connections, id)
-				log.Printf("Player %s disconnected from game %s", id, gameId)
-				break
-			}
-		}
-		game.Mutex.Unlock()
+		h.gameService.RemoveConnection(gameId, conn)
 	}()
 
 	for {

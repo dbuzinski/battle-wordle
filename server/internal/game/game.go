@@ -63,10 +63,10 @@ func (s *Service) getRandomWord() string {
 	return s.wordList[rand.Intn(len(s.wordList))]
 }
 
-// CreateGame creates a new game
-func (s *Service) CreateGame() (*models.Game, error) {
+// CreateGame creates a new game with the specified ID
+func (s *Service) CreateGame(gameId string) (*models.Game, error) {
 	game := &models.Game{
-		Id:          uuid.New().String(),
+		Id:          gameId,
 		Solution:    s.getRandomWord(),
 		Connections: make(map[string]*websocket.Conn),
 		Players:     make([]string, 0, 2),
@@ -321,4 +321,49 @@ func contains(slice []string, str string) bool {
 		}
 	}
 	return false
+}
+
+// CreateRematchGame creates a new game for a rematch
+func (s *Service) CreateRematchGame(prevGame *models.Game) (*models.Game, error) {
+	game := &models.Game{
+		Id:          uuid.New().String(),
+		Solution:    s.getRandomWord(),
+		Connections: make(map[string]*websocket.Conn),
+		Players:     make([]string, 2),
+		Guesses:     make([]string, 0),
+		GameOver:    false,
+	}
+
+	// Flip the player order for the rematch
+	game.Players[0] = prevGame.Players[1]
+	game.Players[1] = prevGame.Players[0]
+	game.CurrentPlayer = game.Players[0]
+
+	s.mutex.Lock()
+	s.games[game.Id] = game
+	s.mutex.Unlock()
+
+	log.Printf("Rematch game created with ID: %s, solution: %s", game.Id, game.Solution)
+	return game, nil
+}
+
+// RemoveConnection removes a connection from a game
+func (s *Service) RemoveConnection(gameId string, conn *websocket.Conn) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	game, exists := s.games[gameId]
+	if !exists {
+		return
+	}
+
+	game.Mutex.Lock()
+	for id, player := range game.Connections {
+		if player == conn {
+			delete(game.Connections, id)
+			log.Printf("Player %s disconnected from game %s", id, gameId)
+			break
+		}
+	}
+	game.Mutex.Unlock()
 }
