@@ -82,7 +82,6 @@ func (s *MatchmakingService) AddToQueue(playerId string, conn *websocket.Conn) {
 				log.Printf("Error storing player association for player %s: %v", playerId, err)
 				return
 			}
-			log.Printf("Stored player association for player %s in game %s", playerId, gameId)
 		}
 
 		// Update current player in database

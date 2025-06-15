@@ -1060,7 +1060,7 @@
       border-radius: 8px;
       background-color: rgba(255, 255, 255, 0.95);
       color: #121213;
-      z-index: 1000;
+      z-index: 999;
       text-align: center;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       animation: slideDown 0.3s ease-out;
@@ -1114,7 +1114,7 @@
       border-radius: 8px;
       background-color: rgba(255, 255, 255, 0.95);
       color: #121213;
-      z-index: 1000;
+      z-index: 999;
       text-align: center;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       animation: slideDown 0.3s ease-out;
@@ -1253,7 +1253,7 @@
       width: 30px;
       height: 30px;
       cursor: pointer;
-      z-index: 1001;
+      z-index: 1002;
       background: none;
       border: none;
       padding: 0;
@@ -1305,7 +1305,7 @@
       opacity: 0;
       visibility: hidden;
       transition: all 0.3s ease;
-      z-index: 999;
+      z-index: 1000;
     }
   
     .menu-overlay.open {
@@ -1322,7 +1322,7 @@
       background-color: #1a1a1a;
       box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
       transition: all 0.3s ease;
-      z-index: 1000;
+      z-index: 1001;
       border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
   
@@ -1408,7 +1408,7 @@
       padding: 30px;
       border-radius: 12px;
       text-align: center;
-      z-index: 1000;
+      z-index: 999;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
       backdrop-filter: blur(8px);
       border: 1px solid rgba(255, 255, 255, 0.1);

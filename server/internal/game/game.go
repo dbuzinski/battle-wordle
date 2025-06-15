@@ -559,8 +559,6 @@ func contains(slice []string, str string) bool {
 
 // CreateRematchGame creates a new game for a rematch
 func (s *Service) CreateRematchGame(gameId string) (*models.Game, error) {
-	log.Printf("[CreateRematchGame] Creating rematch game for game %s", gameId)
-
 	// Get the game data first
 	game, err := s.GetGame(gameId)
 	if err != nil {
@@ -570,7 +568,6 @@ func (s *Service) CreateRematchGame(gameId string) (*models.Game, error) {
 
 	// Create new game ID for rematch
 	rematchGameId := uuid.New().String()
-	log.Printf("[CreateRematchGame] Generated new rematch game ID: %s", rematchGameId)
 
 	// Create new game with flipped player order
 	newGame := &models.Game{
@@ -623,7 +620,6 @@ func (s *Service) CreateRematchGame(gameId string) (*models.Game, error) {
 			log.Printf("[CreateRematchGame] Error storing player association for player %s: %v", playerId, err)
 			return nil, fmt.Errorf("error storing player association: %w", err)
 		}
-		log.Printf("[CreateRematchGame] Stored player association for player %s in game %s", playerId, rematchGameId)
 	}
 
 	// Commit the transaction
@@ -669,8 +665,6 @@ func (s *Service) RemoveConnection(gameId string, conn *websocket.Conn) {
 
 // GetPlayerNames returns a map of player IDs to their names
 func (s *Service) GetPlayerNames(playerIds []string) map[string]string {
-	log.Printf("[GetPlayerNames] Getting names for players: %v", playerIds)
-
 	names := make(map[string]string)
 	if len(playerIds) == 0 {
 		return names
@@ -684,8 +678,6 @@ func (s *Service) GetPlayerNames(playerIds []string) map[string]string {
 		args[i] = id
 	}
 	query := fmt.Sprintf("SELECT id, name FROM players WHERE id IN (%s)", strings.Join(placeholders, ","))
-
-	log.Printf("[GetPlayerNames] Executing query: %s with args: %v", query, args)
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -701,7 +693,6 @@ func (s *Service) GetPlayerNames(playerIds []string) map[string]string {
 			continue
 		}
 		names[id] = name
-		log.Printf("[GetPlayerNames] Found name for player %s: %s", id, name)
 	}
 
 	// Set default names for any players not found
@@ -712,6 +703,5 @@ func (s *Service) GetPlayerNames(playerIds []string) map[string]string {
 		}
 	}
 
-	log.Printf("[GetPlayerNames] Final player names map: %v", names)
 	return names
 }
