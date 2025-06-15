@@ -41,17 +41,10 @@
     let playerStats = {};
     let playerNames = {};
   
-    // Cookie management
     function getCookie(name) {
-      console.log(`[getCookie] Looking for cookie "${name}"`);
       const value = `; ${document.cookie}`;
       const parts = value.split(`; ${name}=`);
-      if (parts.length === 2) {
-        const cookieValue = parts.pop()?.split(';').shift();
-        console.log(`[getCookie] Found cookie "${name}" with value:`, cookieValue);
-        return cookieValue;
-      }
-      console.log(`[getCookie] Cookie "${name}" not found`);
+      if (parts.length === 2) return parts.pop()?.split(';').shift();
       return null;
     }
   
@@ -59,42 +52,18 @@
       const expires = new Date();
       expires.setFullYear(expires.getFullYear() + 1);
       const cookieString = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
-      console.log(`[setCookie] Setting cookie:`, cookieString);
       document.cookie = cookieString;
-  
-      // Check immediately if cookie was set
-      const checkValue = getCookie(name);
-      if (checkValue === value) {
-        console.log(`[setCookie] Cookie "${name}" successfully set.`);
-      } else {
-        console.warn(`[setCookie] Failed to set cookie "${name}". Current value:`, checkValue);
-      }
     }
   
     function getPlayerId() {
-      console.log('[getPlayerId] Start');
       const existingId = getCookie('playerId');
-      if (existingId) {
-        console.log('[getPlayerId] Returning existing playerId:', existingId);
-        return existingId;
-      }
+      if (existingId) return existingId;
   
       const newId = crypto.randomUUID();
-      console.log('[getPlayerId] No playerId found, generating new one:', newId);
       setCookie('playerId', newId);
-  
-      // Confirm it's set
-      const confirmId = getCookie('playerId');
-      if (confirmId === newId) {
-        console.log('[getPlayerId] New playerId successfully stored in cookie:', confirmId);
-      } else {
-        console.warn('[getPlayerId] Failed to store new playerId in cookie. Found:', confirmId);
-      }
-  
       return newId;
     }
   
-    // UI state
     function showMessageTemporarily(msg) {
       message = msg;
       showMessage = true;
@@ -139,12 +108,11 @@
   
     function initializeWebSocket() {
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}`;
+      const wsUrl = `${wsProtocol}//${window.location.hostname}/ws?game=${gameId}`;
       
       socket = new WebSocket(wsUrl);
       
       socket.onopen = () => {
-        console.log('WebSocket connected');
         socket.send(JSON.stringify({
           type: 'join',
           from: playerId
@@ -187,12 +155,10 @@
         initializeBoard();
       }
       
-      // Store rematch game ID if available
       if (msg.rematchGameId) {
         rematchGameId = msg.rematchGameId;
       }
       
-      // Show game over screen if the game is over
       if (msg.gameOver) {
         handleGameOver(msg);
       } else {
@@ -202,7 +168,6 @@
       
       updateTurnStatus(msg);
   
-      // Fetch player stats when game starts
       if (playerIds.length === 2 && !isSpectator) {
         fetchPlayerStats();
       }
@@ -213,7 +178,7 @@
         const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
         const opponentId = playerIds.find(id => id !== playerId);
         if (opponentId) {
-          const response = await fetch(`${serverUrl}//${window.location.hostname}:8080/api/head-to-head-stats?playerId=${playerId}&opponentId=${opponentId}`);
+          const response = await fetch(`${serverUrl}//${window.location.hostname}/api/head-to-head-stats?playerId=${playerId}&opponentId=${opponentId}`);
           if (response.ok) {
             const stats = await response.json();
             playerStats[playerId] = stats;
@@ -230,9 +195,13 @@
       solution = msg.solution;
       allGuesses = msg.guesses || [];
       rematchGameId = msg.rematchGameId;
+      
+      playerIds = msg.players || [];
+      playerNames = msg.playerNames || {};
+      isSpectator = !playerIds.includes(playerId);
+      
       updateBoard();
       
-      // Fetch updated stats after game over
       if (msg.players.includes(playerId)) {
         fetchPlayerStats();
       }
@@ -273,32 +242,25 @@
     }
   
     function startRematch() {
-      if (!rematchGameId) {
-        console.error('No rematch game ID available');
-        return;
-      }
+      if (!rematchGameId) return;
       
       const previousGameId = gameId;
       gameId = rematchGameId;
       
-      // Update URL
       const url = new URL(window.location.href);
       url.searchParams.set('game', gameId);
       url.searchParams.set('rematch', 'true');
       url.searchParams.set('previousGame', previousGameId);
       window.history.pushState({}, '', url);
       
-      // Reset game state
       resetGameState();
       
-      // Connect to rematch game
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
+      const wsUrl = `${wsProtocol}//${window.location.hostname}/ws?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
       
       socket = new WebSocket(wsUrl);
       
       socket.onopen = () => {
-        console.log('WebSocket connected for rematch');
         socket.send(JSON.stringify({
           type: 'join',
           from: playerId
@@ -324,7 +286,6 @@
       };
     }
   
-    // Game logic
     function getGuessStatuses(guess, solution) {
       if (!solution) return Array(guess.length).fill('absent');
       
@@ -332,7 +293,6 @@
       const solutionChars = solution.split('');
       const taken = Array(guess.length).fill(false);
   
-      // First pass: mark correct letters
       for (let i = 0; i < guess.length; i++) {
         if (guess[i].toUpperCase() === solution[i]) {
           statuses[i] = 'correct';
@@ -340,7 +300,6 @@
         }
       }
   
-      // Second pass: mark present letters
       for (let i = 0; i < guess.length; i++) {
         if (statuses[i] === 'correct') continue;
         const idx = solutionChars.findIndex((c, j) => c === guess[i].toUpperCase() && !taken[j]);
@@ -485,7 +444,6 @@
       return current;
     }
   
-    // Input handling
     function handleKey(e) {
       if (isGameOver || isSpectator || !isMyTurn || isMenuOpen) return;
   
@@ -536,7 +494,6 @@
       handleKey({ key, preventDefault: () => {} });
     }
   
-    // UI helpers
     function getTileColor(row, col) {
       const status = statuses[row]?.[col];
       if (status === 'correct') return '#538d4e';
@@ -556,18 +513,15 @@
     async function findMatch() {
       if (isInQueue) return;
       
-      // Reset game state before starting matchmaking
       resetGameState();
       isInQueue = true;
       closeMenu();
       
-      // Get player name from cookie
       const playerName = getCookie('playerName');
       if (playerName) {
         try {
-          // Save name to database before entering queue
           const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-          const response = await fetch(`${serverUrl}//${window.location.hostname}:8080/api/set-player-name`, {
+          const response = await fetch(`${serverUrl}//${window.location.hostname}/api/set-player-name`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -580,20 +534,24 @@
           
           if (!response.ok) {
             console.error('Failed to save player name before matchmaking');
+            isInQueue = false;
+            return;
           }
+          
+          await new Promise(resolve => setTimeout(resolve, 100));
         } catch (error) {
           console.error('Error saving player name before matchmaking:', error);
+          isInQueue = false;
+          return;
         }
       }
       
-      // Connect to queue WebSocket
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws`;
+      const wsUrl = `${wsProtocol}//${window.location.hostname}/ws`;
       
       queueSocket = new WebSocket(wsUrl);
       
       queueSocket.onopen = () => {
-        console.log('Queue WebSocket connected');
         queueSocket.send(JSON.stringify({
           type: 'queue',
           from: playerId
@@ -602,23 +560,18 @@
   
       queueSocket.onmessage = (event) => {
         const msg = JSON.parse(event.data);
-        console.log('Queue message received:', msg);
         
         if (msg.type === 'match_found') {
-          console.log('Match found with player names:', msg.playerNames);
           isInQueue = false;
           gameId = msg.gameId;
           
-          // Update URL
           const url = new URL(window.location.href);
           url.searchParams.set('game', gameId);
           window.history.pushState({}, '', url);
           
-          // Close queue socket
           queueSocket.close();
           queueSocket = null;
           
-          // Initialize game socket
           initializeWebSocket();
         }
       };
@@ -630,13 +583,11 @@
       };
   
       queueSocket.onclose = () => {
-        console.log('Queue WebSocket connection closed');
         isInQueue = false;
         queueSocket = null;
       };
     }
   
-    // Initialize game
     onMount(() => {
       if (browser) {
         playerId = getPlayerId();
@@ -687,14 +638,13 @@
           <h3>Menu</h3>
         </div>
         <nav class="menu-nav">
-          <button 
-            class="menu-link" 
-            on:click={startNewGame}
-            type="button"
-            aria-label="Start new game"
+          <a 
+            href="/"
+            class="menu-link"
+            on:click={closeMenu}
           >
-            <span class="menu-text">New Game</span>
-          </button>
+            <span class="menu-text">Home</span>
+          </a>
           <button 
             class="menu-link" 
             on:click={findMatch} 
@@ -705,6 +655,14 @@
           >
             <span class="menu-text">{isInQueue ? 'Finding Match...' : 'Find Match'}</span>
           </button>
+          <button 
+            class="menu-link" 
+            on:click={startNewGame}
+            type="button"
+            aria-label="Start new game"
+          >
+            <span class="menu-text">New Game</span>
+          </button>
         </nav>
       </div>
     </div>
@@ -713,21 +671,6 @@
       <div class="queue-status">
         <div class="queue-spinner"></div>
         <p>Finding match...</p>
-      </div>
-    {/if}
-  
-    {#if playerIds.length === 2 && !isSpectator}
-      <div class="score-display">
-        <div class="score-item">
-          {#if playerNames[playerIds.find(id => id !== playerId)]}
-            <span class="score-label">vs {playerNames[playerIds.find(id => id !== playerId)]}</span>
-          {:else}
-            <span class="score-label">vs Player</span>
-          {/if}
-          {#if playerStats[playerId]}
-            <span class="stats-text">H2H: W: {playerStats[playerId].wins} L: {playerStats[playerId].losses} D: {playerStats[playerId].draws}</span>
-          {/if}
-        </div>
       </div>
     {/if}
   
@@ -755,28 +698,45 @@
             <button class="game-over-btn rematch" on:click={startRematch}>
               Rematch
             </button>
-            <button class="game-over-btn new-game" on:click={startNewGame}>
-              New Game
+            <button class="game-over-btn find-match" on:click={findMatch}>
+              Find Match
             </button>
           </div>
         {/if}
       </div>
     {/if}
   
-    <div class="grid" style="display: grid; justify-content: center; grid-template-columns: repeat(5, 50px); gap: 5px;">
-      {#each guesses as guess, i}
-        {#each guess as letter, j}
-          <div
-            class="tile"
-            class:flipped={statuses[i]?.[j]}
-            class:current-row={i === currentGuessIndex}
-            class:shake={isInvalidGuess && i === currentGuessIndex}
-            style="--tile-color: {getTileColor(i, j)}; --row-index: {i}; --col-index: {j}"
-          >
-            {letter.toUpperCase()}
+    <div class="game-container">
+      {#if playerIds.length === 2 && !isSpectator}
+        <div class="score-display">
+          <div class="score-item">
+            {#if playerNames[playerIds.find(id => id !== playerId)]}
+              <span class="score-label">vs {playerNames[playerIds.find(id => id !== playerId)]}</span>
+            {:else}
+              <span class="score-label">vs Player</span>
+            {/if}
+            {#if playerStats[playerId]}
+              <span class="stats-text">W: {playerStats[playerId].wins} L: {playerStats[playerId].losses} D: {playerStats[playerId].draws}</span>
+            {/if}
           </div>
+        </div>
+      {/if}
+
+      <div class="grid" style="display: grid; justify-content: center; grid-template-columns: repeat(5, 50px); gap: 5px;">
+        {#each guesses as guess, i}
+          {#each guess as letter, j}
+            <div
+              class="tile"
+              class:flipped={statuses[i]?.[j]}
+              class:current-row={i === currentGuessIndex}
+              class:shake={isInvalidGuess && i === currentGuessIndex}
+              style="--tile-color: {getTileColor(i, j)}; --row-index: {i}; --col-index: {j}"
+            >
+              {letter.toUpperCase()}
+            </div>
+          {/each}
         {/each}
-      {/each}
+      </div>
     </div>
   
     <div class="keyboard">
@@ -1024,7 +984,7 @@
       border-radius: 8px;
       background-color: rgba(255, 255, 255, 0.95);
       color: #121213;
-      z-index: 1000;
+      z-index: 999;
       text-align: center;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       animation: slideDown 0.3s ease-out;
@@ -1078,7 +1038,7 @@
       border-radius: 8px;
       background-color: rgba(255, 255, 255, 0.95);
       color: #121213;
-      z-index: 1000;
+      z-index: 999;
       text-align: center;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
       animation: slideDown 0.3s ease-out;
@@ -1143,12 +1103,49 @@
       margin-top: 0;
     }
   
+    .game-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+  
+    .score-display {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: rgba(255, 255, 255, 0.05);
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      width: fit-content;
+    }
+  
+    .score-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+  
+    .score-label {
+      font-size: 0.9rem;
+      color: #fff;
+      font-weight: 500;
+    }
+  
+    .stats-text {
+      font-size: 0.75rem;
+      color: #818384;
+      letter-spacing: 0.3px;
+    }
+  
     .grid {
       display: grid;
       justify-content: center;
       grid-template-columns: repeat(5, 50px);
       gap: 5px;
-      margin: 2rem 0;
       perspective: 1000px;
     }
   
@@ -1180,7 +1177,7 @@
       width: 30px;
       height: 30px;
       cursor: pointer;
-      z-index: 1001;
+      z-index: 1002;
       background: none;
       border: none;
       padding: 0;
@@ -1232,7 +1229,7 @@
       opacity: 0;
       visibility: hidden;
       transition: all 0.3s ease;
-      z-index: 999;
+      z-index: 1000;
     }
   
     .menu-overlay.open {
@@ -1249,7 +1246,7 @@
       background-color: #1a1a1a;
       box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
       transition: all 0.3s ease;
-      z-index: 1000;
+      z-index: 1001;
       border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
   
@@ -1291,15 +1288,21 @@
       cursor: pointer;
       font-size: 1.1rem;
       letter-spacing: 0.3px;
+      background: none;
+      border: none;
+      width: 100%;
+      text-align: left;
     }
   
     .menu-link:hover {
       transform: translateX(5px);
       color: #538d4e;
+      background: none;
     }
   
     .menu-link:active {
       transform: translateX(0);
+      background: none;
     }
   
     .menu-link.disabled {
@@ -1307,11 +1310,13 @@
       cursor: not-allowed;
       transform: none !important;
       color: rgba(255, 255, 255, 0.5);
+      background: none;
     }
   
     .menu-link.disabled:hover {
       transform: none;
       color: rgba(255, 255, 255, 0.5);
+      background: none;
     }
   
     .menu-text {
@@ -1327,7 +1332,7 @@
       padding: 30px;
       border-radius: 12px;
       text-align: center;
-      z-index: 1000;
+      z-index: 999;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
       backdrop-filter: blur(8px);
       border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1357,46 +1362,14 @@
       }
     }
   
-    .score-display {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background-color: rgba(0, 0, 0, 0.8);
-      padding: 8px 16px;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      z-index: 1000;
-    }
-  
-    .score-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-    }
-  
-    .score-label {
-      font-size: 0.8rem;
-      color: #818384;
-    }
-  
-    .score-value {
-      font-size: 1.2rem;
-      font-weight: bold;
-      color: white;
-    }
-  
-    .stats-text {
-      font-size: 0.7rem;
-      color: #818384;
-    }
-  
-    .score-separator {
-      color: #818384;
-      font-size: 1.2rem;
-      font-weight: bold;
+    /* Add responsive styles for score display */
+    @media (min-width: 768px) {
+      .score-display {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: rgba(0, 0, 0, 0.8);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
     }
   </style>

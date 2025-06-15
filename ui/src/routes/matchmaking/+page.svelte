@@ -22,14 +22,12 @@
     
     isInQueue = true;
     
-    // Connect to queue WebSocket
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws`;
+    const wsUrl = `${wsProtocol}//${window.location.hostname}/ws`;
     
     queueSocket = new WebSocket(wsUrl);
     
     queueSocket.onopen = () => {
-      console.log('Queue WebSocket connected');
       queueSocket.send(JSON.stringify({
         type: 'queue',
         from: playerId
@@ -43,11 +41,9 @@
         isInQueue = false;
         const gameId = msg.gameId;
         
-        // Close queue socket
         queueSocket.close();
         queueSocket = null;
         
-        // Navigate to the game
         goto(`/games?game=${gameId}`);
       }
     };
@@ -59,7 +55,6 @@
     };
 
     queueSocket.onclose = () => {
-      console.log('Queue WebSocket connection closed');
       isInQueue = false;
       queueSocket = null;
     };

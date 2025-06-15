@@ -1,11 +1,33 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
+
+  interface Game {
+    id: string;
+    date: string;
+    loserId: string | null;
+    currentPlayer: string;
+    opponentName: string;
+    opponentId: string;
+    isInProgress: boolean;
+    guesses: string[];
+    solution?: string;
+    gameOver?: boolean;
+  }
 
   let playerName = '';
   let newPlayerName = '';
   let isEditingName = false;
-  let recentGames = [];
+  let recentGames: Game[] = [];
+  let gameOver = false;
+  let loserId = '';
+  let solution = '';
+  let rematchGameId = '';
+  let socket: WebSocket | null = null;
+  let gameId = '';
+  let currentPage = 1;
+  const gamesPerPage = 10;
+  let totalPages = 1;
 
   const adjectives = [
     'Silly', 'Bouncy', 'Wiggly', 'Giggly', 'Wobbly', 'Fluffy', 'Bumpy', 'Jumpy',
@@ -23,26 +45,18 @@
     return `${randomAdj}${randomNoun}`;
   }
 
-  function getCookie(name) {
+  function getCookie(name: string): string | null {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
     if (parts.length === 2) return parts.pop()?.split(';').shift() || null;
     return null;
   }
 
-  function setCookie(name, value) {
+  function setCookie(name: string, value: string): void {
     const expires = new Date();
     expires.setFullYear(expires.getFullYear() + 1);
     const cookieString = `${name}=${value};path=/;expires=${expires.toUTCString()};SameSite=None;Secure`;
     document.cookie = cookieString;
-  }
-
-  function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
   }
 
   // Load player name from cookie
@@ -56,17 +70,15 @@
 
   function loadRecentGames() {
     const playerId = getCookie('playerId');
-    console.log('Loading recent games for playerId:', playerId);
     
     if (!playerId) {
-      console.log('No playerId found, generating new one');
       // Generate a new player ID if one doesn't exist
-      const newPlayerId = generateUUID();
+      const newPlayerId = crypto.randomUUID();
       setCookie('playerId', newPlayerId);
       
       // Save the player name with the new ID
       const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-      fetch(`${serverUrl}//${window.location.hostname}:8080/api/set-player-name`, {
+      fetch(`${serverUrl}//${window.location.hostname}/api/set-player-name`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -79,51 +91,86 @@
         console.error('Error saving player name:', error);
       });
 
-      // No need to load recent games for a new player
       return;
     }
 
     const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    console.log('Fetching recent games from:', `${serverUrl}//${window.location.hostname}:8080/api/recent-games?playerId=${playerId}`);
-    
-    fetch(`${serverUrl}//${window.location.hostname}:8080/api/recent-games?playerId=${playerId}`)
-      .then(response => {
-        console.log('Recent games response status:', response.status);
-        return response.json();
-      })
+    fetch(`${serverUrl}//${window.location.hostname}/api/recent-games?playerId=${playerId}`)
+      .then(response => response.json())
       .then(games => {
-        console.log('Received games:', games);
         recentGames = games || [];
+        totalPages = Math.ceil(recentGames.length / gamesPerPage);
+        currentPage = 1;
       })
       .catch(error => {
         console.error('Error loading recent games:', error);
         recentGames = [];
+        totalPages = 1;
+        currentPage = 1;
       });
   }
 
-  function getGameStatus(game) {
-    console.log('Getting game status for game:', game);
-    if (!game) {
-      console.log('Game is null/undefined');
-      return '';
+  function getPaginatedGames() {
+    const startIndex = (currentPage - 1) * gamesPerPage;
+    const endIndex = startIndex + gamesPerPage;
+    return recentGames.slice(startIndex, endIndex);
+  }
+
+  function nextPage() {
+    if (currentPage < totalPages) {
+      currentPage++;
     }
+  }
+
+  function previousPage() {
+    if (currentPage > 1) {
+      currentPage--;
+    }
+  }
+
+  function getGameStatus(game: Game): string {
+    if (!game) return '';
     
-    // If there's a loser, the game is finished
     if (game.loserId) {
-      const status = game.loserId === getCookie('playerId') ? 'Lost' : 'Won';
-      console.log('Game is finished, status:', status);
-      return status;
+      return game.loserId === getCookie('playerId') ? 'Lost' : 'Won';
     }
     
-    // Game is in progress
     const currentPlayerId = getCookie('playerId');
-    if (game.currentPlayer === currentPlayerId) {
-      console.log('Game in progress, your turn');
-      return 'Your Turn';
-    } else {
-      console.log('Game in progress, opponent\'s turn');
-      return 'Opponent\'s Turn';
+    if (game.isInProgress) {
+      return game.currentPlayer === currentPlayerId ? 'Your Turn' : 'Opponent\'s Turn';
     }
+    
+    return 'Draw';
+  }
+
+  function getGameStatusClass(game: Game): string {
+    if (game.isInProgress) {
+      return 'status-in-progress';
+    }
+    if (game.loserId === getCookie('playerId')) {
+      return 'status-lost';
+    }
+    if (game.loserId) {
+      return 'status-won';
+    }
+    return 'status-draw';
+  }
+
+  function getGameStatusText(game: Game): string {
+    if (game.isInProgress) {
+      if (game.currentPlayer === getCookie('playerId')) {
+        return 'Your Turn';
+      } else {
+        return 'Opponent\'s Turn';
+      }
+    }
+    if (game.loserId === getCookie('playerId')) {
+      return 'Lost';
+    }
+    if (game.loserId) {
+      return 'Won';
+    }
+    return 'Draw';
   }
 
   function startEditingName() {
@@ -136,12 +183,11 @@
       playerName = newPlayerName.trim();
       setCookie('playerName', playerName);
       
-      // Save name to database
       const playerId = getCookie('playerId');
       if (playerId) {
         try {
           const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-          const response = await fetch(`${serverUrl}//${window.location.hostname}:8080/api/set-player-name`, {
+          const response = await fetch(`${serverUrl}//${window.location.hostname}/api/set-player-name`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -175,6 +221,37 @@
   function findMatch() {
     window.location.href = '/matchmaking';
   }
+
+  function handleRematch() {
+    const rematchGameId = getCookie('rematchGameId');
+    if (rematchGameId) {
+      window.location.href = `/games/${rematchGameId}`;
+    }
+  }
+
+  function handleFindMatch() {
+    window.location.href = '/matchmaking';
+  }
+
+  // Initialize socket and set up message handler
+  onMount(() => {
+    // Get game ID from URL
+    const pathParts = window.location.pathname.split('/');
+    gameId = pathParts[pathParts.length - 1];
+    
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(`${wsProtocol}//${window.location.hostname}/ws?game=${gameId}`);
+    
+    socket.onmessage = (event: MessageEvent) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'game_over') {
+        gameOver = true;
+        loserId = message.loserId;
+        solution = message.solution;
+        rematchGameId = message.rematchGameId;
+      }
+    };
+  });
 </script>
 
 <div class="container">
@@ -207,11 +284,11 @@
   </div>
 
   <div class="game-actions">
-    <button class="action-btn new-game" on:click={startNewGame}>
-      New Game
-    </button>
     <button class="action-btn find-match" on:click={findMatch}>
       Find Match
+    </button>
+    <button class="action-btn new-game" on:click={startNewGame}>
+      New Game
     </button>
   </div>
 
@@ -219,15 +296,60 @@
     <div class="recent-games">
       <h2>Recent Games</h2>
       <div class="games-list">
-        {#each recentGames as game}
-          <div class="game-item">
+        <div class="game-header">
+          <div class="game-info">
+            <span class="header-label opponent-header">Opponent</span>
+            <span class="header-label result-header">Result</span>
+          </div>
+          <div class="header-label date-header">Date</div>
+        </div>
+        {#each getPaginatedGames() as game}
+          <a href="/games?game={game.id}" class="game-item">
             <div class="game-info">
-              <span class="opponent">vs {game.opponentName}</span>
-              <span class="result {getGameStatus(game).toLowerCase()}">{getGameStatus(game)}</span>
+              <span class="opponent">{game.opponentName}</span>
+              <span class="result {getGameStatusClass(game)}">{getGameStatusText(game)}</span>
             </div>
             <div class="game-date">{game.date}</div>
-          </div>
+          </a>
         {/each}
+      </div>
+      {#if totalPages > 1}
+        <div class="pagination">
+          <button 
+            class="page-btn" 
+            on:click={previousPage} 
+            disabled={currentPage === 1}
+          >
+            Previous
+          </button>
+          <span class="page-info">Page {currentPage} of {totalPages}</span>
+          <button 
+            class="page-btn" 
+            on:click={nextPage} 
+            disabled={currentPage === totalPages}
+          >
+            Next
+          </button>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  {#if gameOver}
+    <div class="game-over">
+      <h2>Game Over!</h2>
+      <p>
+        {#if loserId === getCookie('playerId')}
+          You lost! The word was {solution}.
+        {:else if loserId}
+          You won! The word was {solution}.
+        {:else}
+          It's a draw! The word was {solution}.
+        {/if}
+      </p>
+      <div class="game-over-buttons">
+        <button class="rematch" on:click={handleRematch}>Rematch</button>
+        <button class="find-match" on:click={handleFindMatch}>Find Match</button>
       </div>
     </div>
   {/if}
@@ -346,7 +468,7 @@
   }
 
   .find-match {
-    background: #b59f3b;
+    background: #538d4e;
     color: white;
   }
 
@@ -377,62 +499,229 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: white;
+  }
+
+  .game-item:hover {
+    transform: translateX(5px);
+    background-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .game-item.status-won {
+    background-color: rgba(83, 141, 78, 0.2);
+  }
+
+  .game-item.status-won:hover {
+    background-color: rgba(83, 141, 78, 0.3);
+  }
+
+  .game-item.status-lost {
+    background-color: rgba(255, 77, 77, 0.2);
+  }
+
+  .game-item.status-lost:hover {
+    background-color: rgba(255, 77, 77, 0.3);
+  }
+
+  .game-item.status-in-progress {
+    background-color: rgba(181, 159, 59, 0.2);
+  }
+
+  .game-item.status-in-progress:hover {
+    background-color: rgba(181, 159, 59, 0.3);
+  }
+
+  .game-item.status-draw {
+    background-color: rgba(129, 131, 132, 0.2);
+  }
+
+  .game-item.status-draw:hover {
+    background-color: rgba(129, 131, 132, 0.3);
+  }
+
+  .game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 12px 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 12px;
+  }
+
+  .header-label {
+    color: #818384;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .opponent-header {
+    min-width: 100px;
+    flex: 1;
+  }
+
+  .result-header {
+    min-width: 80px;
+    text-align: left;
+    padding: 0 4rem;
+  }
+
+  .date-header {
+    min-width: 80px;
+    text-align: right;
   }
 
   .game-info {
     display: flex;
     align-items: center;
     gap: 1rem;
+    flex: 1;
+    min-width: 0;
   }
 
   .opponent {
     font-weight: bold;
+    min-width: 100px;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .result {
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
     font-size: 0.9rem;
-  }
-
-  .result.won {
-    background: #538d4e;
-  }
-
-  .result.lost {
-    background: #b59f3b;
-  }
-
-  .result.draw {
-    background: #3a3a3c;
-  }
-
-  .result.your.turn {
-    background: #538d4e;
-    animation: pulse 2s infinite;
-  }
-
-  .result.opponent.s.turn {
-    background: #b59f3b;
-  }
-
-  @keyframes pulse {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.7;
-    }
-    100% {
-      opacity: 1;
-    }
+    min-width: 80px;
+    text-align: left;
+    display: inline-block;
+    margin: 0 4rem;
+    white-space: nowrap;
   }
 
   .game-date {
     color: #818384;
     font-size: 0.9rem;
+    min-width: 80px;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .status-won {
+    color: #538d4e;
+    font-weight: bold;
+  }
+
+  .status-lost {
+    color: #ff4d4d;
+    font-weight: bold;
+  }
+
+  .status-in-progress {
+    color: #b59f3b;
+    font-weight: bold;
+  }
+
+  .status-draw {
+    color: #818384;
+    font-weight: bold;
+  }
+
+  .game-over-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1rem;
+  }
+
+  .rematch, .find-match {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    background: #538d4e;
+    color: white;
+  }
+
+  .rematch:hover, .find-match:hover {
+    opacity: 0.9;
+  }
+
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .page-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    background: #538d4e;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .page-btn:disabled {
+    background: #3a3a3c;
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .page-btn:not(:disabled):hover {
+    background: #4a7d45;
+    transform: translateY(-1px);
+  }
+
+  .page-info {
+    color: #818384;
+    font-size: 0.9rem;
+  }
+
+  @media (max-width: 480px) {
+    .game-header {
+      display: none;
+    }
+
+    .game-item {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 1rem;
+    }
+
+    .game-info {
+      width: 100%;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .opponent {
+      font-weight: bold;
+      font-size: 1rem;
+    }
+
+    .result {
+      font-size: 0.9rem;
+      padding: 0.25rem 0.75rem;
+    }
+
+    .game-date {
+      width: 100%;
+      text-align: left;
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      color: #a0a0a0;
+    }
   }
 </style>
