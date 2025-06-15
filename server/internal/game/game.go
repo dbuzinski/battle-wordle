@@ -525,7 +525,7 @@ func (s *Service) GetRecentGames(playerId string) ([]map[string]interface{}, err
 
 		// Get the game from memory to check if it's still active
 		gameState, _ := s.GetGame(id)
-		isInProgress := gameState != nil && !gameState.GameOver
+		isInProgress := gameState != nil && !gameState.GameOver && len(gameState.Players) == 2
 		log.Printf("[GetRecentGames] Game %s in memory: %v, isInProgress: %v",
 			id, gameState != nil, isInProgress)
 
@@ -627,9 +627,65 @@ func (s *Service) CreateRematchGame(gameId string) (*models.Game, error) {
 		GameOver:      false,
 	}
 
-	// Add the new game to the service
+	// Store the game in the database
+	guessesJson, err := json.Marshal(newGame.Guesses)
+	if err != nil {
+		log.Printf("[CreateRematchGame] Error marshaling guesses: %v", err)
+		return nil, fmt.Errorf("error marshaling guesses: %w", err)
+	}
+
+	// Start a transaction
+	tx, err := s.db.Begin()
+	if err != nil {
+		log.Printf("[CreateRematchGame] Error starting transaction: %v", err)
+		return nil, fmt.Errorf("error starting transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Insert the game
+	_, err = tx.Exec(`
+		INSERT INTO games (
+			id, 
+			solution, 
+			current_player,
+			game_over,
+			guesses
+		) VALUES (?, ?, ?, ?, ?)
+	`, rematchGameId, newGame.Solution, newGame.CurrentPlayer, false, string(guessesJson))
+	if err != nil {
+		log.Printf("[CreateRematchGame] Error storing game in database: %v", err)
+		return nil, fmt.Errorf("error storing game in database: %w", err)
+	}
+
+	// Insert player associations
+	for _, playerId := range newGame.Players {
+		_, err = tx.Exec(`
+			INSERT INTO game_players (game_id, player_id)
+			VALUES (?, ?)
+		`, rematchGameId, playerId)
+		if err != nil {
+			log.Printf("[CreateRematchGame] Error storing player association for player %s: %v", playerId, err)
+			return nil, fmt.Errorf("error storing player association: %w", err)
+		}
+		log.Printf("[CreateRematchGame] Stored player association for player %s in game %s", playerId, rematchGameId)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		log.Printf("[CreateRematchGame] Error committing transaction: %v", err)
+		return nil, fmt.Errorf("error committing transaction: %w", err)
+	}
+
+	// Add the new game to the service and ensure it's properly initialized
 	s.mutex.Lock()
 	s.games[rematchGameId] = newGame
+	s.mutex.Unlock()
+
+	// Initialize game state in memory
+	s.mutex.Lock()
+	if _, exists := s.games[rematchGameId]; !exists {
+		s.games[rematchGameId] = newGame
+	}
 	s.mutex.Unlock()
 
 	log.Printf("[CreateRematchGame] Created rematch game %s with players %v", rematchGameId, newGame.Players)
