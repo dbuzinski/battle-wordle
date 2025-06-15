@@ -71,6 +71,8 @@ func (h *HTTPHandler) HandleStats(w http.ResponseWriter, r *http.Request) {
 
 // HandleSetPlayerName handles setting player names
 func (h *HTTPHandler) HandleSetPlayerName(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[HandleSetPlayerName] Received request to set player name")
+
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -79,6 +81,7 @@ func (h *HTTPHandler) HandleSetPlayerName(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if r.Method != http.MethodPost {
+		log.Printf("[HandleSetPlayerName] Invalid method: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -87,15 +90,20 @@ func (h *HTTPHandler) HandleSetPlayerName(w http.ResponseWriter, r *http.Request
 		PlayerName string `json:"playerName"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[HandleSetPlayerName] Error decoding request: %v", err)
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("[HandleSetPlayerName] Setting name for player %s to: %s", req.PlayerId, req.PlayerName)
+
 	if err := h.gameService.SetPlayerName(req.PlayerId, req.PlayerName); err != nil {
+		log.Printf("[HandleSetPlayerName] Error setting player name: %v", err)
 		http.Error(w, "Error setting player name", http.StatusInternalServerError)
 		return
 	}
 
+	log.Printf("[HandleSetPlayerName] Successfully set name for player %s", req.PlayerId)
 	w.WriteHeader(http.StatusOK)
 }
 

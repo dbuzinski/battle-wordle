@@ -174,6 +174,12 @@
       console.log('[handleGameState] Received game state:', msg);
       playerIds = msg.players || [];
       playerNames = msg.playerNames || {};
+      console.log('[handleGameState] Player IDs:', playerIds);
+      console.log('[handleGameState] Player Names:', playerNames);
+      console.log('[handleGameState] Current player ID:', playerId);
+      console.log('[handleGameState] Opponent ID:', playerIds.find(id => id !== playerId));
+      console.log('[handleGameState] Opponent Name:', playerNames[playerIds.find(id => id !== playerId)]);
+      
       isSpectator = !playerIds.includes(playerId);
       isMyTurn = !isSpectator && msg.currentPlayer === playerId;
       
@@ -594,9 +600,16 @@
           
           if (!response.ok) {
             console.error('Failed to save player name before matchmaking');
+            isInQueue = false;
+            return;
           }
+          
+          // Wait a moment to ensure the name is saved in the database
+          await new Promise(resolve => setTimeout(resolve, 100));
         } catch (error) {
           console.error('Error saving player name before matchmaking:', error);
+          isInQueue = false;
+          return;
         }
       }
       

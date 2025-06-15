@@ -250,15 +250,39 @@ func (s *Service) GetPlayerStats(playerId string) (wins, losses, draws int, err 
 
 // SetPlayerName sets a player's name
 func (s *Service) SetPlayerName(playerId string, name string) error {
-	// First ensure player exists
-	_, err := s.db.Exec("INSERT OR IGNORE INTO players (id) VALUES (?)", playerId)
+	log.Printf("[SetPlayerName] Setting name for player %s to: %s", playerId, name)
+
+	// First ensure player exists with default name
+	_, err := s.db.Exec("INSERT OR IGNORE INTO players (id, name) VALUES (?, ?)", playerId, "Player")
 	if err != nil {
+		log.Printf("[SetPlayerName] Error ensuring player exists: %v", err)
 		return err
 	}
 
 	// Then update their name
-	_, err = s.db.Exec("UPDATE players SET name = ? WHERE id = ?", name, playerId)
-	return err
+	result, err := s.db.Exec("UPDATE players SET name = ? WHERE id = ?", name, playerId)
+	if err != nil {
+		log.Printf("[SetPlayerName] Error updating player name: %v", err)
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("[SetPlayerName] Error getting rows affected: %v", err)
+		return err
+	}
+	log.Printf("[SetPlayerName] Successfully updated name for player %s (rows affected: %d)", playerId, rowsAffected)
+
+	// Verify the name was saved
+	var savedName string
+	err = s.db.QueryRow("SELECT name FROM players WHERE id = ?", playerId).Scan(&savedName)
+	if err != nil {
+		log.Printf("[SetPlayerName] Error verifying saved name: %v", err)
+	} else {
+		log.Printf("[SetPlayerName] Verified saved name for player %s: %s", playerId, savedName)
+	}
+
+	return nil
 }
 
 // GetRecentGames returns a player's recent games
@@ -509,4 +533,53 @@ func (s *Service) recordGame(gameId string, solution string, loserId string, pla
 
 	log.Printf("[recordGame] Successfully committed all database changes for game %s", gameId)
 	return nil
+}
+
+// GetPlayerNames returns a map of player IDs to their names
+func (s *Service) GetPlayerNames(playerIds []string) map[string]string {
+	log.Printf("[GetPlayerNames] Getting names for players: %v", playerIds)
+
+	names := make(map[string]string)
+	if len(playerIds) == 0 {
+		return names
+	}
+
+	// Build the query with the correct number of placeholders
+	placeholders := make([]string, len(playerIds))
+	args := make([]interface{}, len(playerIds))
+	for i, id := range playerIds {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := fmt.Sprintf("SELECT id, name FROM players WHERE id IN (%s)", strings.Join(placeholders, ","))
+
+	log.Printf("[GetPlayerNames] Executing query: %s with args: %v", query, args)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		log.Printf("[GetPlayerNames] Error querying player names: %v", err)
+		return names
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			log.Printf("[GetPlayerNames] Error scanning row: %v", err)
+			continue
+		}
+		names[id] = name
+		log.Printf("[GetPlayerNames] Found name for player %s: %s", id, name)
+	}
+
+	// Set default names for any players not found
+	for _, id := range playerIds {
+		if _, exists := names[id]; !exists {
+			names[id] = "Player"
+			log.Printf("[GetPlayerNames] No name found for player %s, using default", id)
+		}
+	}
+
+	log.Printf("[GetPlayerNames] Final player names map: %v", names)
+	return names
 }

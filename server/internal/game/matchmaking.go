@@ -75,12 +75,17 @@ func (s *MatchmakingService) AddToQueue(playerId string, conn *websocket.Conn) {
 		log.Printf("Match found! Game ID: %s, Players: %v, First player: %s, Solution: %s",
 			gameId, game.Players, game.CurrentPlayer, game.Solution)
 
+		// Get player names
+		playerNames := s.gameService.GetPlayerNames(game.Players)
+		log.Printf("[AddToQueue] Player names for game %s: %v", gameId, playerNames)
+
 		// Send match found message to both players
 		matchMsg := models.Message{
-			Type:     models.MATCH_FOUND,
-			GameId:   gameId,
-			Players:  game.Players,
-			Solution: game.Solution,
+			Type:        models.MATCH_FOUND,
+			GameId:      gameId,
+			Players:     game.Players,
+			Solution:    game.Solution,
+			PlayerNames: playerNames,
 		}
 
 		data, err := json.Marshal(matchMsg)
@@ -89,6 +94,7 @@ func (s *MatchmakingService) AddToQueue(playerId string, conn *websocket.Conn) {
 			return
 		}
 
+		log.Printf("[AddToQueue] Sending match found message to players: %v", game.Players)
 		// Send to both players
 		if err := player1.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			log.Printf("Error sending match found message to player %s: %v", player1.PlayerId, err)

@@ -151,6 +151,7 @@ func (h *WebSocketHandler) sendGameState(game *models.Game, playerId string) {
 		Players:       game.Players,
 		LoserId:       game.LoserId,
 		RematchGameId: game.RematchGameId,
+		PlayerNames:   h.gameService.GetPlayerNames(game.Players),
 	}
 
 	if err := game.Connections[playerId].WriteJSON(msg); err != nil {
@@ -174,6 +175,7 @@ func (h *WebSocketHandler) broadcastGameState(game *models.Game) {
 		Players:       game.Players,
 		LoserId:       game.LoserId,
 		RematchGameId: game.RematchGameId,
+		PlayerNames:   h.gameService.GetPlayerNames(game.Players),
 	}
 
 	log.Printf("[broadcastGameState] Broadcasting %s message for game %s", msgType, game.Id)
