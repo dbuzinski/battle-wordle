@@ -19,7 +19,13 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Set development environment
-source "$SCRIPT_DIR/set-env.sh" dev
+export ENV=development
+export NODE_ENV=development
+export UI_PORT=5173
+export VITE_WS_URL=ws://localhost:8080/ws
+export VITE_API_URL=http://localhost:8080/api
+export PORT=8080
+export DB_PATH=./battlewordle.db
 
 case "$1" in
     "ui")
