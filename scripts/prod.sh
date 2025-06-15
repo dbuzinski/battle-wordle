@@ -11,4 +11,4 @@ source "$SCRIPT_DIR/set-env.sh" prod
 cd "$PROJECT_ROOT" && docker compose down
 
 # Start the services
-cd "$PROJECT_ROOT" && docker compose up --build 
+cd "$PROJECT_ROOT" && docker compose up --build -d
