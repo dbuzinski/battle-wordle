@@ -25,7 +25,6 @@ func NewHTTPHandler(gameService *game.Service) *HTTPHandler {
 var allowedOrigins = []string{
 	"https://battlewordle.app",
 	"https://www.battlewordle.app",
-	"http://localhost:5173",
 }
 
 // corsMiddleware adds CORS headers to the response

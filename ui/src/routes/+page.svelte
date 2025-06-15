@@ -78,7 +78,7 @@
       
       // Save the player name with the new ID
       const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-      fetch(`${serverUrl}//${window.location.hostname}:8080/api/set-player-name`, {
+      fetch(`${serverUrl}//${window.location.hostname}/api/set-player-name`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -95,7 +95,7 @@
     }
 
     const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-    fetch(`${serverUrl}//${window.location.hostname}:8080/api/recent-games?playerId=${playerId}`)
+    fetch(`${serverUrl}//${window.location.hostname}/api/recent-games?playerId=${playerId}`)
       .then(response => response.json())
       .then(games => {
         recentGames = games || [];
@@ -187,7 +187,7 @@
       if (playerId) {
         try {
           const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-          const response = await fetch(`${serverUrl}//${window.location.hostname}:8080/api/set-player-name`, {
+          const response = await fetch(`${serverUrl}//${window.location.hostname}/api/set-player-name`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -239,7 +239,8 @@
     const pathParts = window.location.pathname.split('/');
     gameId = pathParts[pathParts.length - 1];
     
-    socket = new WebSocket(`ws://localhost:8080/ws?game=${gameId}`);
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(`${wsProtocol}//${window.location.hostname}/ws?game=${gameId}`);
     
     socket.onmessage = (event: MessageEvent) => {
       const message = JSON.parse(event.data);
@@ -249,7 +250,6 @@
         solution = message.solution;
         rematchGameId = message.rematchGameId;
       }
-      // ... rest of the message handling ...
     };
   });
 </script>

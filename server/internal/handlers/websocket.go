@@ -30,7 +30,6 @@ func NewWebSocketHandler(gameService *game.Service, matchmakingService *game.Mat
 				origin := r.Header.Get("Origin")
 				return origin == "https://battlewordle.app" ||
 					origin == "https://www.battlewordle.app" ||
-					origin == "http://localhost:5173"
 			},
 		},
 	}

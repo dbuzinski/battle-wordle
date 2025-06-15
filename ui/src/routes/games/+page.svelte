@@ -108,7 +108,7 @@
   
     function initializeWebSocket() {
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}`;
+      const wsUrl = `${wsProtocol}//${window.location.hostname}/ws?game=${gameId}`;
       
       socket = new WebSocket(wsUrl);
       
@@ -178,7 +178,7 @@
         const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
         const opponentId = playerIds.find(id => id !== playerId);
         if (opponentId) {
-          const response = await fetch(`${serverUrl}//${window.location.hostname}:8080/api/head-to-head-stats?playerId=${playerId}&opponentId=${opponentId}`);
+          const response = await fetch(`${serverUrl}//${window.location.hostname}/api/head-to-head-stats?playerId=${playerId}&opponentId=${opponentId}`);
           if (response.ok) {
             const stats = await response.json();
             playerStats[playerId] = stats;
@@ -256,7 +256,7 @@
       resetGameState();
       
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
+      const wsUrl = `${wsProtocol}//${window.location.hostname}/ws?game=${gameId}&rematch=true&previousGame=${previousGameId}`;
       
       socket = new WebSocket(wsUrl);
       
@@ -521,7 +521,7 @@
       if (playerName) {
         try {
           const serverUrl = window.location.protocol === 'https:' ? 'https:' : 'http:';
-          const response = await fetch(`${serverUrl}//${window.location.hostname}:8080/api/set-player-name`, {
+          const response = await fetch(`${serverUrl}//${window.location.hostname}/api/set-player-name`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -547,7 +547,7 @@
       }
       
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws`;
+      const wsUrl = `${wsProtocol}//${window.location.hostname}/ws`;
       
       queueSocket = new WebSocket(wsUrl);
       

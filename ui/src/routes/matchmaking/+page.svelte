@@ -23,7 +23,7 @@
     isInQueue = true;
     
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.hostname}:8080/ws`;
+    const wsUrl = `${wsProtocol}//${window.location.hostname}/ws`;
     
     queueSocket = new WebSocket(wsUrl);
     
