@@ -33,7 +33,7 @@ COPY --from=builder /app/battle-wordle-server .
 COPY --from=builder /app/word_list.txt .
 
 # Copy config files
-COPY config/prod.json ./config/
+COPY config/prod.json ./config/prod.json
 
 # Expose the port
 EXPOSE 8080
