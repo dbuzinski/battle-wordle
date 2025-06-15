@@ -2,7 +2,7 @@
   "env": "production",
   "nodeEnv": "production",
   "ui": {
-    "port": 5173,
+    "port": 3000,
     "wsUrl": "wss://battlewordle.app/ws",
     "apiUrl": "https://battlewordle.app/api"
   },
