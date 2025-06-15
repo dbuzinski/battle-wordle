@@ -66,11 +66,9 @@ func (s *MatchmakingService) AddToQueue(playerId string, conn *websocket.Conn) {
 
 		// Randomly assign player order
 		if rand.Intn(2) == 0 {
-			game.Players[0] = player1.PlayerId
-			game.Players[1] = player2.PlayerId
+			game.Players = []string{player1.PlayerId, player2.PlayerId}
 		} else {
-			game.Players[0] = player2.PlayerId
-			game.Players[1] = player1.PlayerId
+			game.Players = []string{player2.PlayerId, player1.PlayerId}
 		}
 		game.CurrentPlayer = game.Players[0]
 
