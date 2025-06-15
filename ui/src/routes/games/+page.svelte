@@ -750,21 +750,6 @@
       </div>
     {/if}
   
-    {#if playerIds.length === 2 && !isSpectator}
-      <div class="score-display">
-        <div class="score-item">
-          {#if playerNames[playerIds.find(id => id !== playerId)]}
-            <span class="score-label">vs {playerNames[playerIds.find(id => id !== playerId)]}</span>
-          {:else}
-            <span class="score-label">vs Player</span>
-          {/if}
-          {#if playerStats[playerId]}
-            <span class="stats-text">H2H: W: {playerStats[playerId].wins} L: {playerStats[playerId].losses} D: {playerStats[playerId].draws}</span>
-          {/if}
-        </div>
-      </div>
-    {/if}
-  
     <h1 style="text-align: center; color: white;">Battle Wordle</h1>
     <h2 style="text-align: center; color: white; font-size: 1.2em;">Try to avoid guessing the word!</h2>
   
@@ -797,20 +782,37 @@
       </div>
     {/if}
   
-    <div class="grid" style="display: grid; justify-content: center; grid-template-columns: repeat(5, 50px); gap: 5px;">
-      {#each guesses as guess, i}
-        {#each guess as letter, j}
-          <div
-            class="tile"
-            class:flipped={statuses[i]?.[j]}
-            class:current-row={i === currentGuessIndex}
-            class:shake={isInvalidGuess && i === currentGuessIndex}
-            style="--tile-color: {getTileColor(i, j)}; --row-index: {i}; --col-index: {j}"
-          >
-            {letter.toUpperCase()}
+    <div class="game-container">
+      {#if playerIds.length === 2 && !isSpectator}
+        <div class="score-display">
+          <div class="score-item">
+            {#if playerNames[playerIds.find(id => id !== playerId)]}
+              <span class="score-label">vs {playerNames[playerIds.find(id => id !== playerId)]}</span>
+            {:else}
+              <span class="score-label">vs Player</span>
+            {/if}
+            {#if playerStats[playerId]}
+              <span class="stats-text">W: {playerStats[playerId].wins} L: {playerStats[playerId].losses} D: {playerStats[playerId].draws}</span>
+            {/if}
           </div>
+        </div>
+      {/if}
+
+      <div class="grid" style="display: grid; justify-content: center; grid-template-columns: repeat(5, 50px); gap: 5px;">
+        {#each guesses as guess, i}
+          {#each guess as letter, j}
+            <div
+              class="tile"
+              class:flipped={statuses[i]?.[j]}
+              class:current-row={i === currentGuessIndex}
+              class:shake={isInvalidGuess && i === currentGuessIndex}
+              style="--tile-color: {getTileColor(i, j)}; --row-index: {i}; --col-index: {j}"
+            >
+              {letter.toUpperCase()}
+            </div>
+          {/each}
         {/each}
-      {/each}
+      </div>
     </div>
   
     <div class="keyboard">
@@ -1177,12 +1179,49 @@
       margin-top: 0;
     }
   
+    .game-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+  
+    .score-display {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: rgba(255, 255, 255, 0.05);
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      width: fit-content;
+    }
+  
+    .score-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+  
+    .score-label {
+      font-size: 0.9rem;
+      color: #fff;
+      font-weight: 500;
+    }
+  
+    .stats-text {
+      font-size: 0.75rem;
+      color: #818384;
+      letter-spacing: 0.3px;
+    }
+  
     .grid {
       display: grid;
       justify-content: center;
       grid-template-columns: repeat(5, 50px);
       gap: 5px;
-      margin: 2rem 0;
       perspective: 1000px;
     }
   
@@ -1399,46 +1438,14 @@
       }
     }
   
-    .score-display {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background-color: rgba(0, 0, 0, 0.8);
-      padding: 8px 16px;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      z-index: 1000;
-    }
-  
-    .score-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-    }
-  
-    .score-label {
-      font-size: 0.8rem;
-      color: #818384;
-    }
-  
-    .score-value {
-      font-size: 1.2rem;
-      font-weight: bold;
-      color: white;
-    }
-  
-    .stats-text {
-      font-size: 0.7rem;
-      color: #818384;
-    }
-  
-    .score-separator {
-      color: #818384;
-      font-size: 1.2rem;
-      font-weight: bold;
+    /* Add responsive styles for score display */
+    @media (min-width: 768px) {
+      .score-display {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: rgba(0, 0, 0, 0.8);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      }
     }
   </style>

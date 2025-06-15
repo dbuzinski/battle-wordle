@@ -79,8 +79,6 @@ func (s *Service) GetGame(id string) (*models.Game, error) {
 
 // CreateGame creates a new game with the specified ID
 func (s *Service) CreateGame(gameId string) (*models.Game, error) {
-	log.Printf("[CreateGame] Creating new game with ID: %s", gameId)
-
 	game := &models.Game{
 		Id:          gameId,
 		Solution:    s.getRandomWord(),
@@ -93,17 +91,12 @@ func (s *Service) CreateGame(gameId string) (*models.Game, error) {
 	// Store the game in the database immediately
 	guessesJson, err := json.Marshal(game.Guesses)
 	if err != nil {
-		log.Printf("[CreateGame] Error marshaling guesses: %v", err)
 		return nil, fmt.Errorf("error marshaling guesses: %w", err)
 	}
-
-	log.Printf("[CreateGame] Storing game in database: id=%s, solution=%s, currentPlayer=%s, gameOver=%v",
-		gameId, game.Solution, models.PLACEHOLDER, false)
 
 	// Start a transaction
 	tx, err := s.db.Begin()
 	if err != nil {
-		log.Printf("[CreateGame] Error starting transaction: %v", err)
 		return nil, fmt.Errorf("error starting transaction: %w", err)
 	}
 	defer tx.Rollback()
@@ -119,13 +112,11 @@ func (s *Service) CreateGame(gameId string) (*models.Game, error) {
 		) VALUES (?, ?, ?, ?, ?)
 	`, gameId, game.Solution, models.PLACEHOLDER, false, string(guessesJson))
 	if err != nil {
-		log.Printf("[CreateGame] Error storing game in database: %v", err)
 		return nil, fmt.Errorf("error storing game in database: %w", err)
 	}
 
 	// Commit the transaction
 	if err := tx.Commit(); err != nil {
-		log.Printf("[CreateGame] Error committing transaction: %v", err)
 		return nil, fmt.Errorf("error committing transaction: %w", err)
 	}
 
@@ -133,19 +124,15 @@ func (s *Service) CreateGame(gameId string) (*models.Game, error) {
 	s.games[game.Id] = game
 	s.mutex.Unlock()
 
-	log.Printf("[CreateGame] Successfully created game %s with solution %s", game.Id, game.Solution)
 	return game, nil
 }
 
 // JoinGame handles a player joining a game
 func (s *Service) JoinGame(gameId string, playerId string, conn *websocket.Conn) error {
-	log.Printf("[JoinGame] Player %s joining game %s", playerId, gameId)
-
 	s.mutex.Lock()
 	game, exists := s.games[gameId]
 	if !exists {
 		s.mutex.Unlock()
-		log.Printf("[JoinGame] Game %s not found", gameId)
 		return models.ErrGameNotFound
 	}
 
@@ -160,10 +147,8 @@ func (s *Service) JoinGame(gameId string, playerId string, conn *websocket.Conn)
 				VALUES (?, ?)
 			`, gameId, playerId)
 			if err != nil {
-				log.Printf("[JoinGame] Error storing player association: %v", err)
 				return fmt.Errorf("error storing player association: %w", err)
 			}
-			log.Printf("[JoinGame] Stored player association for player %s in game %s", playerId, gameId)
 		}
 		if game.CurrentPlayer == "" {
 			game.CurrentPlayer = playerId
@@ -172,10 +157,8 @@ func (s *Service) JoinGame(gameId string, playerId string, conn *websocket.Conn)
 				UPDATE games SET current_player = ? WHERE id = ?
 			`, playerId, gameId)
 			if err != nil {
-				log.Printf("[JoinGame] Error updating current player: %v", err)
 				return fmt.Errorf("error updating current player: %w", err)
 			}
-			log.Printf("[JoinGame] Set current player to %s for game %s", playerId, gameId)
 		} else if game.CurrentPlayer == models.PLACEHOLDER {
 			game.CurrentPlayer = playerId
 			// Update current player in database
@@ -183,10 +166,8 @@ func (s *Service) JoinGame(gameId string, playerId string, conn *websocket.Conn)
 				UPDATE games SET current_player = ? WHERE id = ?
 			`, playerId, gameId)
 			if err != nil {
-				log.Printf("[JoinGame] Error updating current player: %v", err)
 				return fmt.Errorf("error updating current player: %w", err)
 			}
-			log.Printf("[JoinGame] Set current player to %s for game %s", playerId, gameId)
 		}
 	}
 	s.mutex.Unlock()
@@ -195,41 +176,33 @@ func (s *Service) JoinGame(gameId string, playerId string, conn *websocket.Conn)
 
 // MakeGuess handles a player making a guess
 func (s *Service) MakeGuess(gameId string, playerId string, guess string) error {
-	log.Printf("[MakeGuess] Player %s making guess in game %s: %s", playerId, gameId, guess)
-
 	s.mutex.Lock()
 	game, exists := s.games[gameId]
 	if !exists {
 		s.mutex.Unlock()
-		log.Printf("[MakeGuess] Game %s not found", gameId)
 		return models.ErrGameNotFound
 	}
 
 	if game.GameOver {
 		s.mutex.Unlock()
-		log.Printf("[MakeGuess] Game %s is already over", gameId)
 		return models.ErrGameOver
 	}
 
 	if game.CurrentPlayer != playerId {
 		s.mutex.Unlock()
-		log.Printf("[MakeGuess] Not player %s's turn in game %s", playerId, gameId)
 		return models.ErrNotYourTurn
 	}
 
 	if len(game.Guesses) > 0 && len(game.Players) < 2 {
 		s.mutex.Unlock()
-		log.Printf("[MakeGuess] Waiting for opponent in game %s", gameId)
 		return models.ErrWaitingForOpponent
 	}
 
 	game.Guesses = append(game.Guesses, guess)
-	log.Printf("[MakeGuess] Added guess to game %s, total guesses: %d", gameId, len(game.Guesses))
 
 	// Update guesses in database
 	guessesJson, err := json.Marshal(game.Guesses)
 	if err != nil {
-		log.Printf("[MakeGuess] Error marshaling guesses: %v", err)
 		return fmt.Errorf("error marshaling guesses: %w", err)
 	}
 
@@ -237,7 +210,6 @@ func (s *Service) MakeGuess(gameId string, playerId string, guess string) error 
 		game.GameOver = true
 		game.LoserId = playerId
 		s.mutex.Unlock()
-		log.Printf("[MakeGuess] Player %s lost game %s", playerId, gameId)
 		return s.HandleGameOver(game)
 	}
 
@@ -245,7 +217,6 @@ func (s *Service) MakeGuess(gameId string, playerId string, guess string) error 
 		game.GameOver = true
 		game.LoserId = ""
 		s.mutex.Unlock()
-		log.Printf("[MakeGuess] Game %s ended in a draw", gameId)
 		return s.HandleGameOver(game)
 	}
 
@@ -256,16 +227,12 @@ func (s *Service) MakeGuess(gameId string, playerId string, guess string) error 
 			if id == playerId {
 				nextPlayerIndex := (i + 1) % len(game.Players)
 				game.CurrentPlayer = game.Players[nextPlayerIndex]
-				log.Printf("[MakeGuess] Switching turn to player: %s", game.CurrentPlayer)
 				break
 			}
 		}
 	}
 
 	// Update game state in database
-	log.Printf("[MakeGuess] Updating game state in database: id=%s, currentPlayer=%s, gameOver=%v, loserId=%s",
-		gameId, game.CurrentPlayer, game.GameOver, game.LoserId)
-
 	_, err = s.db.Exec(`
 		UPDATE games 
 		SET guesses = ?,
@@ -275,11 +242,9 @@ func (s *Service) MakeGuess(gameId string, playerId string, guess string) error 
 		WHERE id = ?
 	`, string(guessesJson), game.CurrentPlayer, game.GameOver, game.LoserId, gameId)
 	if err != nil {
-		log.Printf("[MakeGuess] Error updating game state in database: %v", err)
 		return fmt.Errorf("error updating game state in database: %w", err)
 	}
 
-	log.Printf("[MakeGuess] Successfully updated game state in database for game %s", gameId)
 	s.mutex.Unlock()
 	return nil
 }
@@ -289,8 +254,6 @@ func (s *Service) HandleGameOver(game *models.Game) error {
 	if game == nil {
 		return fmt.Errorf("nil game object")
 	}
-
-	log.Printf("[HandleGameOver] Starting game over handling for game %s", game.Id)
 
 	// Create rematch game first
 	rematchGame, err := s.CreateRematchGame(game.Id)
@@ -306,7 +269,6 @@ func (s *Service) HandleGameOver(game *models.Game) error {
 	// Update game state in database
 	guessesJson, err := json.Marshal(game.Guesses)
 	if err != nil {
-		log.Printf("[HandleGameOver] Error marshaling guesses: %v", err)
 		return fmt.Errorf("error marshaling guesses: %w", err)
 	}
 
@@ -320,7 +282,6 @@ func (s *Service) HandleGameOver(game *models.Game) error {
 		WHERE id = ?
 	`, game.LoserId, string(guessesJson), game.CurrentPlayer, rematchGame.Id, game.Id)
 	if err != nil {
-		log.Printf("[HandleGameOver] Error updating game state in database: %v", err)
 		return fmt.Errorf("error updating game state in database: %w", err)
 	}
 
@@ -333,10 +294,8 @@ func (s *Service) HandleGameOver(game *models.Game) error {
 			WHERE id = ?
 		`, game.LoserId)
 		if err != nil {
-			log.Printf("[HandleGameOver] Error updating loser stats: %v", err)
 			return fmt.Errorf("error updating loser stats: %w", err)
 		}
-		log.Printf("[HandleGameOver] Successfully updated loser stats for player %s", game.LoserId)
 
 		// Update winner's wins
 		winnerId := game.Players[0]
@@ -349,10 +308,8 @@ func (s *Service) HandleGameOver(game *models.Game) error {
 			WHERE id = ?
 		`, winnerId)
 		if err != nil {
-			log.Printf("[HandleGameOver] Error updating winner stats: %v", err)
 			return fmt.Errorf("error updating winner stats: %w", err)
 		}
-		log.Printf("[HandleGameOver] Successfully updated winner stats for player %s", winnerId)
 	} else {
 		// Update draws for both players
 		for _, playerId := range game.Players {
@@ -362,10 +319,8 @@ func (s *Service) HandleGameOver(game *models.Game) error {
 				WHERE id = ?
 			`, playerId)
 			if err != nil {
-				log.Printf("[HandleGameOver] Error updating draw stats for player %s: %v", playerId, err)
 				return fmt.Errorf("error updating draw stats: %w", err)
 			}
-			log.Printf("[HandleGameOver] Successfully updated draw stats for player %s", playerId)
 		}
 	}
 
@@ -396,7 +351,7 @@ func (s *Service) HandleGameOver(game *models.Game) error {
 
 	for id, player := range connections {
 		if err := player.WriteMessage(websocket.TextMessage, data); err != nil {
-			log.Printf("Error sending game over message to player %s: %v", id, err)
+			log.Printf("Error sending game over message to player %s in game %s: %v", id, game.Id, err)
 		}
 	}
 
@@ -567,6 +522,7 @@ func (s *Service) GetHeadToHeadStats(playerId, opponentId string) (wins, losses,
 		FROM games g
 		JOIN game_players gp1 ON g.id = gp1.game_id AND gp1.player_id = ?
 		JOIN game_players gp2 ON g.id = gp2.game_id AND gp2.player_id = ?
+		WHERE g.game_over = true
 	`, playerId, opponentId, playerId, opponentId)
 	if err != nil {
 		return 0, 0, 0, err
@@ -709,100 +665,6 @@ func (s *Service) RemoveConnection(gameId string, conn *websocket.Conn) {
 			break
 		}
 	}
-}
-
-// recordGame records a game in the database
-func (s *Service) recordGame(gameId string, solution string, loserId string, playerIds []string) error {
-	log.Printf("[recordGame] Starting to record game %s in database", gameId)
-
-	// Start a transaction
-	tx, err := s.db.Begin()
-	if err != nil {
-		log.Printf("[recordGame] Error starting transaction: %v", err)
-		return fmt.Errorf("error starting transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	log.Printf("[recordGame] Started transaction for game %s", gameId)
-
-	// Insert the game
-	_, err = tx.Exec(`
-		INSERT INTO games (id, solution, loser_id, current_player)
-		VALUES (?, ?, ?, ?)
-	`, gameId, solution, loserId, playerIds[0])
-	if err != nil {
-		log.Printf("[recordGame] Error inserting game: %v", err)
-		return fmt.Errorf("error inserting game: %w", err)
-	}
-
-	log.Printf("[recordGame] Successfully inserted game record")
-
-	// Insert player associations
-	for _, playerId := range playerIds {
-		_, err = tx.Exec(`
-			INSERT INTO game_players (game_id, player_id)
-			VALUES (?, ?)
-		`, gameId, playerId)
-		if err != nil {
-			log.Printf("[recordGame] Error inserting player association for player %s: %v", playerId, err)
-			return fmt.Errorf("error inserting player association: %w", err)
-		}
-		log.Printf("[recordGame] Successfully inserted player association for player %s", playerId)
-	}
-
-	// Update player stats if there's a loser
-	if loserId != "" {
-		// Update loser's losses
-		_, err = tx.Exec(`
-			UPDATE players
-			SET losses = losses + 1
-			WHERE id = ?
-		`, loserId)
-		if err != nil {
-			log.Printf("[recordGame] Error updating loser stats: %v", err)
-			return fmt.Errorf("error updating loser stats: %w", err)
-		}
-		log.Printf("[recordGame] Successfully updated loser stats for player %s", loserId)
-
-		// Update winner's wins
-		winnerId := playerIds[0]
-		if winnerId == loserId {
-			winnerId = playerIds[1]
-		}
-		_, err = tx.Exec(`
-			UPDATE players
-			SET wins = wins + 1
-			WHERE id = ?
-		`, winnerId)
-		if err != nil {
-			log.Printf("[recordGame] Error updating winner stats: %v", err)
-			return fmt.Errorf("error updating winner stats: %w", err)
-		}
-		log.Printf("[recordGame] Successfully updated winner stats for player %s", winnerId)
-	} else {
-		// Update draws for both players
-		for _, playerId := range playerIds {
-			_, err = tx.Exec(`
-				UPDATE players
-				SET draws = draws + 1
-				WHERE id = ?
-			`, playerId)
-			if err != nil {
-				log.Printf("[recordGame] Error updating draw stats for player %s: %v", playerId, err)
-				return fmt.Errorf("error updating draw stats: %w", err)
-			}
-			log.Printf("[recordGame] Successfully updated draw stats for player %s", playerId)
-		}
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		log.Printf("[recordGame] Error committing transaction: %v", err)
-		return fmt.Errorf("error committing transaction: %w", err)
-	}
-
-	log.Printf("[recordGame] Successfully committed all database changes for game %s", gameId)
-	return nil
 }
 
 // GetPlayerNames returns a map of player IDs to their names

@@ -36,20 +36,26 @@ func NewWebSocketHandler(gameService *game.Service, matchmakingService *game.Mat
 	}
 }
 
+// createGameStateMessage creates a game state message
+func (h *WebSocketHandler) createGameStateMessage(game *models.Game, msgType string) *models.Message {
+	return &models.Message{
+		Type:          msgType,
+		CurrentPlayer: game.CurrentPlayer,
+		Solution:      game.Solution,
+		Guesses:       game.Guesses,
+		GameOver:      game.GameOver,
+		Players:       game.Players,
+		LoserId:       game.LoserId,
+		RematchGameId: game.RematchGameId,
+		PlayerNames:   h.gameService.GetPlayerNames(game.Players),
+	}
+}
+
 // HandleConnection handles a new WebSocket connection
 func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	gameId := r.URL.Query().Get("game")
 
-	upgrader := websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-		CheckOrigin: func(r *http.Request) bool {
-			origin := r.Header.Get("Origin")
-			return origin == "https://battlewordle.app" || origin == "https://www.battlewordle.app" || origin == "http://localhost:5173"
-		},
-	}
-
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Error upgrading connection: %v", err)
 		return
@@ -85,13 +91,12 @@ func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Reque
 			// Create a new game if it doesn't exist
 			game, err = h.gameService.CreateGame(gameId)
 			if err != nil {
-				log.Printf("Error creating game: %v", err)
+				log.Printf("Error creating game %s: %v", gameId, err)
 				conn.Close()
 				return
 			}
-			log.Printf("New game created with ID: %s, solution: %s", gameId, game.Solution)
 		} else {
-			log.Printf("Error getting game: %v", err)
+			log.Printf("Error getting game %s: %v", gameId, err)
 			conn.Close()
 			return
 		}
@@ -115,24 +120,22 @@ func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 
-		log.Printf("Received message type: %s from player: %s in game: %s", msg.Type, msg.From, gameId)
-
 		switch msg.Type {
 		case models.JOIN_MSG:
 			if err := h.gameService.JoinGame(gameId, msg.From, conn); err != nil {
-				log.Printf("Error joining game: %v", err)
+				log.Printf("Error joining game %s: %v", gameId, err)
 				continue
 			}
 			h.sendGameState(game, msg.From)
 		case models.GUESS_MSG:
 			if err := h.gameService.MakeGuess(gameId, msg.From, msg.Guess); err != nil {
-				log.Printf("Error making guess: %v", err)
+				log.Printf("Error making guess in game %s: %v", gameId, err)
 				continue
 			}
 			// Get updated game state after guess
 			game, err = h.gameService.GetGame(gameId)
 			if err != nil {
-				log.Printf("Error getting updated game state: %v", err)
+				log.Printf("Error getting updated game state for game %s: %v", gameId, err)
 				continue
 			}
 			h.broadcastGameState(game)
@@ -142,20 +145,9 @@ func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Reque
 
 // sendGameState sends the current game state to a specific player
 func (h *WebSocketHandler) sendGameState(game *models.Game, playerId string) {
-	msg := &models.Message{
-		Type:          models.GAME_STATE,
-		CurrentPlayer: game.CurrentPlayer,
-		Solution:      game.Solution,
-		Guesses:       game.Guesses,
-		GameOver:      game.GameOver,
-		Players:       game.Players,
-		LoserId:       game.LoserId,
-		RematchGameId: game.RematchGameId,
-		PlayerNames:   h.gameService.GetPlayerNames(game.Players),
-	}
-
+	msg := h.createGameStateMessage(game, models.GAME_STATE)
 	if err := game.Connections[playerId].WriteJSON(msg); err != nil {
-		log.Printf("Error sending game state to player %s: %v", playerId, err)
+		log.Printf("Error sending game state to player %s in game %s: %v", playerId, game.Id, err)
 	}
 }
 
@@ -166,23 +158,10 @@ func (h *WebSocketHandler) broadcastGameState(game *models.Game) {
 		msgType = models.GAME_OVER
 	}
 
-	msg := &models.Message{
-		Type:          msgType,
-		CurrentPlayer: game.CurrentPlayer,
-		Solution:      game.Solution,
-		Guesses:       game.Guesses,
-		GameOver:      game.GameOver,
-		Players:       game.Players,
-		LoserId:       game.LoserId,
-		RematchGameId: game.RematchGameId,
-		PlayerNames:   h.gameService.GetPlayerNames(game.Players),
-	}
-
-	log.Printf("[broadcastGameState] Broadcasting %s message for game %s", msgType, game.Id)
-
+	msg := h.createGameStateMessage(game, msgType)
 	for id, player := range game.Connections {
 		if err := player.WriteJSON(msg); err != nil {
-			log.Printf("Error broadcasting game state to player %s: %v", id, err)
+			log.Printf("Error broadcasting game state to player %s in game %s: %v", id, game.Id, err)
 		}
 	}
 }

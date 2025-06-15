@@ -592,44 +592,48 @@
   }
 
   .opponent-header {
-    min-width: 120px;
+    width: 100px;
+    flex: 1;
   }
 
   .result-header {
-    min-width: 100px;
+    width: 80px;
     text-align: left;
-    padding: 0 0.5rem;
+    padding: 0 4rem;
   }
 
   .date-header {
-    min-width: 100px;
+    width: 80px;
     text-align: right;
   }
 
   .game-info {
     display: flex;
     align-items: center;
-    gap: 2rem;
+    gap: 1rem;
+    flex: 1;
   }
 
   .opponent {
     font-weight: bold;
-    min-width: 120px;
+    width: 100px;
+    flex: 1;
   }
 
   .result {
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
     font-size: 0.9rem;
-    min-width: 100px;
+    width: 80px;
     text-align: left;
     display: inline-block;
+    margin: 0 4rem;
   }
 
   .game-date {
     color: #818384;
     font-size: 0.9rem;
-    min-width: 100px;
+    width: 80px;
     text-align: right;
   }
 
@@ -708,5 +712,41 @@
   .page-info {
     color: #818384;
     font-size: 0.9rem;
+  }
+
+  @media (max-width: 480px) {
+    .game-header {
+      display: none;
+    }
+
+    .game-item {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 1rem;
+    }
+
+    .game-info {
+      width: 100%;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .opponent {
+      font-weight: bold;
+      font-size: 1rem;
+    }
+
+    .result {
+      font-size: 0.9rem;
+      padding: 0.25rem 0.75rem;
+    }
+
+    .game-date {
+      width: 100%;
+      text-align: left;
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      color: #a0a0a0;
+    }
   }
 </style>
