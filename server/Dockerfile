@@ -1,7 +1,7 @@
 # Build stage
 FROM golang:1.21-alpine AS builder
 
-WORKDIR /app/server
+WORKDIR /app
 
 # Copy go mod and sum files
 COPY server/go.mod server/go.sum ./
@@ -13,7 +13,7 @@ RUN go mod download
 COPY server/ .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o battle-wordle-server
+RUN CGO_ENABLED=0 GOOS=linux go build -o battle-wordle-server ./cmd/main.go
 
 # Final stage
 FROM alpine:latest
@@ -21,10 +21,10 @@ FROM alpine:latest
 WORKDIR /app
 
 # Copy the binary from builder
-COPY --from=builder /app/server/battle-wordle-server .
+COPY --from=builder /app/battle-wordle-server .
 
 # Copy word list
-COPY --from=builder /app/server/word_list.txt .
+COPY --from=builder /app/word_list.txt .
 
 # Expose the port
 EXPOSE 8080
