@@ -49,7 +49,7 @@ case "$1" in
         echo "Switching to production environment..."
         set_env_from_config "$PROJECT_ROOT/config/prod.json"
         # Use production nginx config
-        cp "$PROJECT_ROOT/nginx/nginx.conf.prod" "$PROJECT_ROOT/nginx/nginx.conf"
+        cp "$PROJECT_ROOT/nginx/nginx.conf" "$PROJECT_ROOT/nginx/nginx.conf"
         ;;
     *)
         show_usage
