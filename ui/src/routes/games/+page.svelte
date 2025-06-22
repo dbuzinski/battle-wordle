@@ -107,7 +107,7 @@
     }
   
     function initializeWebSocket() {
-      const wsUrl = `${import.meta.env.VITE_WS_URL}?game=${gameId}`;
+      const wsUrl = `${import.meta.env.VITE_WS_URL}/game/${gameId}`;
       
       socket = new WebSocket(wsUrl);
       
@@ -176,7 +176,7 @@
       try {
         const opponentId = playerIds.find(id => id !== playerId);
         if (opponentId) {
-          const response = await fetch(`${import.meta.env.VITE_API_URL}/stats?playerId=${playerId}&opponentId=${opponentId}`);
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/stats/h2h/${playerId}/${opponentId}`);
           if (response.ok) {
             const stats = await response.json();
             playerStats[playerId] = stats;
@@ -517,18 +517,23 @@
       const playerName = getCookie('playerName');
       if (playerName) {
         try {
-          const response = await fetch(`${import.meta.env.VITE_API_URL}/set-player-name`, {
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/player/register`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              playerId,
-              playerName
+              name: playerName
             })
           });
           
-          if (!response.ok) {
+          if (response.ok) {
+            const player = await response.json();
+            if (player && player.id) {
+              setCookie('playerId', player.id);
+              playerId = player.id;
+            }
+          } else {
             console.error('Failed to save player name before matchmaking');
             isInQueue = false;
             return;

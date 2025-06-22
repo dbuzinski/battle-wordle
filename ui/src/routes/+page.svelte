@@ -72,29 +72,44 @@
     const playerId = getCookie('playerId');
     
     if (!playerId) {
-      // Generate a new player ID if one doesn't exist
-      const newPlayerId = crypto.randomUUID();
-      setCookie('playerId', newPlayerId);
-      
-      // Save the player name with the new ID
-      fetch(`${import.meta.env.VITE_API_URL}/set-player-name`, {
+      // Register the player first to get a proper ID from the backend
+      fetch(`${import.meta.env.VITE_API_URL}/player/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          playerId: newPlayerId,
-          playerName
+          name: playerName
         })
-      }).catch(error => {
-        console.error('Error saving player name:', error);
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(player => {
+        // Use the player ID returned from the backend
+        if (player && player.id) {
+          setCookie('playerId', player.id);
+          // Now load games with the correct player ID
+          loadRecentGames();
+        }
+      })
+      .catch(error => {
+        console.error('Error registering player:', error);
       });
 
       return;
     }
 
-    fetch(`${import.meta.env.VITE_API_URL}/recent-games?playerId=${playerId}`)
-      .then(response => response.json())
+    fetch(`${import.meta.env.VITE_API_URL}/player/${playerId}/games`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
       .then(games => {
         recentGames = games || [];
         totalPages = Math.ceil(recentGames.length / gamesPerPage);
@@ -184,18 +199,23 @@
       const playerId = getCookie('playerId');
       if (playerId) {
         try {
-          const response = await fetch(`${import.meta.env.VITE_API_URL}/set-player-name`, {
+          const response = await fetch(`${import.meta.env.VITE_API_URL}/player/register`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              playerId,
-              playerName
+              name: playerName
             })
           });
           
-          if (!response.ok) {
+          if (response.ok) {
+            const player = await response.json();
+            // Use the player ID returned from the backend
+            if (player && player.id) {
+              setCookie('playerId', player.id);
+            }
+          } else {
             console.error('Failed to save player name');
           }
         } catch (error) {
@@ -236,17 +256,17 @@
     const pathParts = window.location.pathname.split('/');
     gameId = pathParts[pathParts.length - 1];
     
-    socket = new WebSocket(`${import.meta.env.VITE_WS_URL}?game=${gameId}`);
+    // socket = new WebSocket(`${import.meta.env.VITE_WS_URL}?game=${gameId}`);
     
-    socket.onmessage = (event: MessageEvent) => {
-      const message = JSON.parse(event.data);
-      if (message.type === 'game_over') {
-        gameOver = true;
-        loserId = message.loserId;
-        solution = message.solution;
-        rematchGameId = message.rematchGameId;
-      }
-    };
+    // socket.onmessage = (event: MessageEvent) => {
+    //   const message = JSON.parse(event.data);
+    //   if (message.type === 'game_over') {
+    //     gameOver = true;
+    //     loserId = message.loserId;
+    //     solution = message.solution;
+    //     rematchGameId = message.rematchGameId;
+    //   }
+    // };
   });
 </script>
 
@@ -300,7 +320,7 @@
           <div class="header-label date-header">Date</div>
         </div>
         {#each getPaginatedGames() as game}
-          <a href="/games?game={game.id}" class="game-item">
+          <a href="/game/{game.id}" class="game-item">
             <div class="game-info">
               <span class="opponent">{game.opponentName}</span>
               <span class="result {getGameStatusClass(game)}">{getGameStatusText(game)}</span>

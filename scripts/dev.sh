@@ -34,12 +34,12 @@ case "$1" in
         ;;
     "server")
         echo "Starting server in development mode..."
-        cd "$PROJECT_ROOT/server" && PROJECT_ROOT="$PROJECT_ROOT" go run cmd/main.go
+        cd "$PROJECT_ROOT/server" && PROJECT_ROOT="$PROJECT_ROOT" go run main.go
         ;;
     "all")
         echo "Starting both UI and server in development mode..."
         # Start server in background
-        cd "$PROJECT_ROOT/server" && PROJECT_ROOT="$PROJECT_ROOT" go run cmd/main.go &
+        cd "$PROJECT_ROOT/server" && PROJECT_ROOT="$PROJECT_ROOT" go run main.go &
         SERVER_PID=$!
         
         # Start UI

@@ -43,7 +43,7 @@
         queueSocket.close();
         queueSocket = null;
         
-        goto(`/games?game=${gameId}`);
+        goto(`/game/${gameId}`);
       }
     };
 
