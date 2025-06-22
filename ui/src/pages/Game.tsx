@@ -125,26 +125,7 @@ const Game: React.FC = () => {
   return (
     <div style={{ minHeight: '100vh', background: '#121213', color: 'white', fontFamily: `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif` }}>
       <div style={{ maxWidth: 500, margin: '0 auto', padding: 20 }}>
-        <h1 style={{
-          fontSize: 'clamp(1.8rem, 5vw, 2.5rem)',
-          marginBottom: '0.5rem',
-          background: 'linear-gradient(45deg, #538d4e, #b59f3b)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          textAlign: 'center',
-          textShadow: '0 2px 4px rgba(0,0,0,0.1)'
-        }}>
-          Battle Wordle
-        </h1>
-        <h2 style={{
-          fontSize: 'clamp(1rem, 3vw, 1.2em)',
-          color: '#818384',
-          marginTop: 0,
-          textAlign: 'center',
-          fontWeight: 400
-        }}>
-          Try to avoid guessing the word!
-        </h2>
+        {/* Removed Battle Wordle title and subtitle */}
         {/* Turn status */}
         {turnStatus && (
           <div style={{

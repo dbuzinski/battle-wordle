@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"battle-wordle/server/models"
 	"battle-wordle/server/services"
 
 	"github.com/google/uuid"
@@ -44,7 +45,9 @@ func (c *PlayerController) GetPlayerById(w http.ResponseWriter, r *http.Request)
 
 func (c *PlayerController) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
+		Name     string  `json:"name"`
+		Password *string `json:"password,omitempty"`
+		ID       *string `json:"id,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
@@ -53,13 +56,57 @@ func (c *PlayerController) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	player, err := c.service.CreatePlayer(ctx, req.Name)
+	player, jwtToken, err := c.service.CreatePlayer(ctx, req.Name, req.Password, req.ID)
 	if err != nil {
+		if err.Error() == "username_taken" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Username is already taken."})
+			return
+		}
 		log.Printf("error creating player: %v", err)
 		http.Error(w, "Failed to create player", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(player)
+	if player.Registered && jwtToken != nil {
+		json.NewEncoder(w).Encode(struct {
+			Player *models.Player `json:"player"`
+			Token  string         `json:"token"`
+		}{
+			Player: player,
+			Token:  *jwtToken,
+		})
+	} else {
+		json.NewEncoder(w).Encode(player)
+	}
+}
+
+func (c *PlayerController) Login(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name     string `json:"name"`
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Password == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	player, jwtToken, err := c.service.Login(ctx, req.Name, req.Password)
+	if err != nil {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		Player *models.Player `json:"player"`
+		Token  string         `json:"token"`
+	}{
+		Player: player,
+		Token:  *jwtToken,
+	})
 }

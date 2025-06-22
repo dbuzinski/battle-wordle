@@ -31,8 +31,12 @@ func NewPlayerRepository(dbPath string) (*PlayerRepository, error) {
 func (r *PlayerRepository) initializeTable() error {
 	query := `
         CREATE TABLE IF NOT EXISTS players (
-					id TEXT PRIMARY KEY,
-					name TEXT NOT NULL
+				id TEXT PRIMARY KEY,
+				name TEXT NOT NULL UNIQUE,
+				registered BOOLEAN NOT NULL,
+				password_hash TEXT,
+				elo INTEGER,
+				created_at TEXT NOT NULL
         );
     `
 	_, err := r.db.Exec(query)
@@ -41,7 +45,7 @@ func (r *PlayerRepository) initializeTable() error {
 
 func (r *PlayerRepository) GetByID(ctx context.Context, id string) (*models.Player, error) {
 	const query = `
-        SELECT id, name
+        SELECT id, name, registered, password_hash, elo, created_at
         FROM players
         WHERE id = $1
     `
@@ -49,12 +53,22 @@ func (r *PlayerRepository) GetByID(ctx context.Context, id string) (*models.Play
 	row := r.db.QueryRowContext(ctx, query, id)
 
 	var player models.Player
-	err := row.Scan(&player.ID, &player.Name)
+	var passwordHash sql.NullString
+	var elo sql.NullInt64
+
+	err := row.Scan(&player.ID, &player.Name, &player.Registered, &passwordHash, &elo, &player.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Not found
 		}
 		return nil, fmt.Errorf("query player by ID failed: %w", err)
+	}
+	if passwordHash.Valid {
+		player.PasswordHash = &passwordHash.String
+	}
+	if elo.Valid {
+		eloInt := int(elo.Int64)
+		player.Elo = &eloInt
 	}
 
 	return &player, nil
@@ -62,11 +76,90 @@ func (r *PlayerRepository) GetByID(ctx context.Context, id string) (*models.Play
 
 func (r *PlayerRepository) CreatePlayer(ctx context.Context, player *models.Player) error {
 	const query = `
-		INSERT INTO players (id, name) VALUES ($1, $2)
+		INSERT INTO players (id, name, registered, password_hash, elo, created_at) VALUES ($1, $2, $3, $4, $5, $6)
 	`
-	_, err := r.db.ExecContext(ctx, query, player.ID, player.Name)
+	_, err := r.db.ExecContext(ctx, query, player.ID, player.Name, player.Registered, player.PasswordHash, player.Elo, player.CreatedAt)
 	if err != nil {
+		if sqliteErr, ok := err.(interface{ Error() string }); ok && ( // fallback for sqlite3 driver
+		// Check for unique constraint violation (code 2067 for sqlite3)
+		// See: https://www.sqlite.org/rescode.html#constraint_unique
+		// Unfortunately, mattn/go-sqlite3 does not export error codes, so we check the error string
+		// This is brittle but works for now
+		// Example error: "UNIQUE constraint failed: players.name"
+		len(sqliteErr.Error()) > 0 &&
+			(sqliteErr.Error() == "UNIQUE constraint failed: players.name" ||
+				(sqliteErr.Error() != "" && ( // fallback for partial match
+				len(sqliteErr.Error()) > 0 &&
+					(sqliteErr.Error()[:27] == "UNIQUE constraint failed: " &&
+						len(sqliteErr.Error()) > 27 &&
+						sqliteErr.Error()[27:] == "players.name"))))) {
+			return fmt.Errorf("username_taken")
+		}
 		return fmt.Errorf("failed to insert player: %w", err)
+	}
+	return nil
+}
+
+func (r *PlayerRepository) GetByName(ctx context.Context, name string) (*models.Player, error) {
+	const query = `
+        SELECT id, name, registered, password_hash, elo, created_at
+        FROM players
+        WHERE name = $1
+    `
+
+	row := r.db.QueryRowContext(ctx, query, name)
+
+	var player models.Player
+	var passwordHash sql.NullString
+	var elo sql.NullInt64
+
+	err := row.Scan(&player.ID, &player.Name, &player.Registered, &passwordHash, &elo, &player.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Not found
+		}
+		return nil, fmt.Errorf("query player by name failed: %w", err)
+	}
+	if passwordHash.Valid {
+		player.PasswordHash = &passwordHash.String
+	}
+	if elo.Valid {
+		eloInt := int(elo.Int64)
+		player.Elo = &eloInt
+	}
+
+	return &player, nil
+}
+
+// UpdateGuestToRegistered updates a guest player to a registered player with a new name and password hash.
+func (r *PlayerRepository) UpdateGuestToRegistered(ctx context.Context, id string, newName string, passwordHash string) error {
+	// Check if the new name is already taken by another player
+	const checkNameQuery = `SELECT id FROM players WHERE name = $1 AND id != $2`
+	row := r.db.QueryRowContext(ctx, checkNameQuery, newName, id)
+	var existingID string
+	err := row.Scan(&existingID)
+	if err == nil {
+		return fmt.Errorf("username_taken")
+	} else if err != sql.ErrNoRows {
+		return fmt.Errorf("failed to check name: %w", err)
+	}
+
+	// Update the guest player to registered
+	const updateQuery = `
+		UPDATE players
+		SET name = $1, registered = 1, password_hash = $2
+		WHERE id = $3 AND registered = 0
+	`
+	res, err := r.db.ExecContext(ctx, updateQuery, newName, passwordHash, id)
+	if err != nil {
+		return fmt.Errorf("failed to update guest: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("guest_not_found_or_already_registered")
 	}
 	return nil
 }

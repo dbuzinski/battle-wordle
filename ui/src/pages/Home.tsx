@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { FaPencilAlt } from 'react-icons/fa';
 
 const adjectives = [
   'Silly', 'Bouncy', 'Wiggly', 'Giggly', 'Wobbly', 'Fluffy', 'Bumpy', 'Jumpy',
@@ -21,31 +22,38 @@ const mockRecentGames = [
   { id: '4', opponentName: 'GigglyOtter', result: 'Opponent\'s Turn', date: '2024-05-28' },
 ];
 
-const Home: React.FC = () => {
-  const [playerName, setPlayerName] = useState('');
+// Define the Player type
+interface Player {
+  id: string;
+  name: string;
+  registered: boolean;
+  elo?: number;
+  created_at: string;
+}
+
+interface HomeProps {
+  player: Player | null;
+  setPlayer: React.Dispatch<React.SetStateAction<Player | null>>;
+}
+
+const Home: React.FC<HomeProps> = ({ player, setPlayer }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
-
-  useEffect(() => {
-    let storedName = localStorage.getItem('playerName');
-    if (!storedName) {
-      storedName = generateRandomUsername();
-      localStorage.setItem('playerName', storedName);
-    }
-    setPlayerName(storedName);
-  }, []);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const startEditingName = () => {
-    setNewPlayerName(playerName);
+    setNewPlayerName(player?.name || '');
     setIsEditingName(true);
   };
 
   const savePlayerName = () => {
-    if (newPlayerName.trim()) {
-      setPlayerName(newPlayerName.trim());
-      localStorage.setItem('playerName', newPlayerName.trim());
-      setIsEditingName(false);
-    }
+    if (!player || !newPlayerName.trim()) return;
+    // TODO: Send update to backend (not implemented yet)
+    const updatedPlayer = { ...player, name: newPlayerName.trim() };
+    setPlayer(updatedPlayer);
+    localStorage.setItem('player', JSON.stringify(updatedPlayer));
+    setIsEditingName(false);
   };
 
   const cancelEditingName = () => {
@@ -62,30 +70,26 @@ const Home: React.FC = () => {
     alert('Navigate to new game');
   };
 
+  if (loading) {
+    return <div style={{ color: 'white', textAlign: 'center', marginTop: '4rem' }}>Loading...</div>;
+  }
+  if (error) {
+    return <div style={{ color: 'red', textAlign: 'center', marginTop: '4rem' }}>{error}</div>;
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#121213', color: 'white', fontFamily: `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif` }}>
-      <div style={{ maxWidth: 600, margin: '0 auto', padding: '2rem' }}>
-        <h1 style={{
-          textAlign: 'center',
-          fontSize: '2.5rem',
-          marginBottom: '2rem',
-          background: 'linear-gradient(45deg, #538d4e, #b59f3b)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-        }}>
-          Battle Wordle
-        </h1>
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '2rem', paddingTop: '1rem' }}>
         {/* Player section */}
         <div style={{ background: 'rgba(255,255,255,0.1)', padding: '1.5rem', borderRadius: 8, marginBottom: '2rem' }}>
           {!isEditingName ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '1.2rem' }}>
-              <span>Player: {playerName}</span>
-              <button
-                style={{ background: 'none', border: '1px solid #538d4e', color: '#538d4e', padding: '0.5rem 1rem', borderRadius: 4, cursor: 'pointer', transition: 'all 0.2s' }}
-                onClick={startEditingName}
-              >
-                Edit
-              </button>
+              <span>Player: {player?.name} {player && !player.registered && <span style={{ fontSize: '0.9rem', color: '#f3f3f3', marginLeft: 8 }}>(Guest)</span>}</span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button style={{ background: 'none', border: 'none', color: '#538d4e', padding: '0.5rem', borderRadius: 4, cursor: 'pointer' }} onClick={startEditingName} aria-label="Edit name">
+                  <FaPencilAlt />
+                </button>
+              </div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

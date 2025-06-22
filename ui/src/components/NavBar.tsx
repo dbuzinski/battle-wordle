@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-const NavBar: React.FC = () => {
+interface NavBarProps {
+  isLoggedIn: boolean;
+  playerName?: string;
+  onLoginClick: () => void;
+  onLogoutClick: () => void;
+}
+
+const NavBar: React.FC<NavBarProps> = ({ isLoggedIn, playerName, onLoginClick, onLogoutClick }) => {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -12,37 +19,94 @@ const NavBar: React.FC = () => {
 
   return (
     <>
-      <button
-        className="menu-icon"
-        onClick={() => setOpen(o => !o)}
-        aria-label="Open menu"
-        aria-expanded={open}
-        aria-controls="menu-sidebar"
-        style={{ position: 'fixed', top: 20, left: 20, zIndex: 1002, background: 'none', border: 'none', padding: 0 }}
-      >
-        <div className={`hamburger${open ? ' open' : ''}`} style={{ width: 30, height: 30, position: 'relative' }}>
-          <div style={{
-            position: 'absolute',
-            width: '100%',
-            height: 2,
-            background: 'white',
-            top: open ? '50%' : '25%',
-            left: 0,
-            transform: open ? 'translateY(-50%) rotate(45deg)' : 'none',
-            transition: 'all 0.3s',
-          }} />
-          <div style={{
-            position: 'absolute',
-            width: '100%',
-            height: 2,
-            background: 'white',
-            bottom: open ? '50%' : '25%',
-            left: 0,
-            transform: open ? 'translateY(50%) rotate(-45deg)' : 'none',
-            transition: 'all 0.3s',
-          }} />
+      {/* Header Bar */}
+      <header style={{
+        width: '100%',
+        height: 64,
+        background: '#1a1a1a',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        zIndex: 1100,
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        padding: '0 1.5rem',
+        boxSizing: 'border-box',
+      }}>
+        {/* Hamburger */}
+        <button
+          className="menu-icon"
+          onClick={() => setOpen(o => !o)}
+          aria-label="Open menu"
+          aria-expanded={open}
+          aria-controls="menu-sidebar"
+          style={{ background: 'none', border: 'none', padding: 0 }}
+        >
+          <div className={`hamburger${open ? ' open' : ''}`} style={{ width: 30, height: 30, position: 'relative' }}>
+            <div style={{
+              position: 'absolute',
+              width: '100%',
+              height: 2,
+              background: 'white',
+              top: open ? '50%' : '25%',
+              left: 0,
+              transform: open ? 'translateY(-50%) rotate(45deg)' : 'none',
+              transition: 'all 0.3s',
+            }} />
+            <div style={{
+              position: 'absolute',
+              width: '100%',
+              height: 2,
+              background: 'white',
+              bottom: open ? '50%' : '25%',
+              left: 0,
+              transform: open ? 'translateY(50%) rotate(-45deg)' : 'none',
+              transition: 'all 0.3s',
+            }} />
+          </div>
+        </button>
+        {/* Title */}
+        <div className="navbar-title" style={{ flex: 1, textAlign: 'center', fontWeight: 700, fontSize: '1.5rem', color: 'white', letterSpacing: '1px', userSelect: 'none', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          Battle Wordle
         </div>
-      </button>
+        {/* Login/Logout */}
+        <div className="navbar-actions" style={{ minWidth: 80, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+          {isLoggedIn ? (
+            <>
+              <span className="navbar-player-name" style={{ color: '#f3f3f3', marginRight: 8, fontWeight: 500, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'none' /* hidden by default, shown on larger screens */ }}>
+                {playerName}
+              </span>
+              <button onClick={onLogoutClick} style={{ background: 'none', border: '1.5px solid #538d4e', color: '#538d4e', padding: '0.5rem 1rem', borderRadius: 4, cursor: 'pointer', fontWeight: 500, backgroundColor: 'rgba(83,141,78,0.08)' }}>Logout</button>
+            </>
+          ) : (
+            <button onClick={onLoginClick} style={{ background: 'none', border: '1.5px solid #538d4e', color: '#538d4e', padding: '0.5rem 1rem', borderRadius: 4, cursor: 'pointer', fontWeight: 500, backgroundColor: 'rgba(83,141,78,0.08)' }}>Login</button>
+          )}
+        </div>
+      </header>
+      {/* Responsive styles */}
+      <style>{`
+        @media (max-width: 600px) {
+          .navbar-title {
+            font-size: 1.1rem !important;
+          }
+          .navbar-player-name {
+            display: none !important;
+          }
+          .navbar-actions button {
+            padding: 0.5rem 0.7rem !important;
+            font-size: 0.95rem !important;
+          }
+        }
+        @media (min-width: 601px) {
+          .navbar-player-name {
+            display: inline !important;
+          }
+        }
+      `}</style>
+      {/* Spacer for header */}
+      <div style={{ height: 64 }} />
       {/* Overlay */}
       <div
         className={`menu-overlay${open ? ' open' : ''}`}

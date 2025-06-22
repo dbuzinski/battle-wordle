@@ -71,6 +71,7 @@ func main() {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/api/player/register", playerController.Register)
+	r.HandleFunc("/api/player/login", playerController.Login)
 	r.HandleFunc("/api/player/{id}", playerController.GetPlayerById)
 	r.HandleFunc("/api/player/{id}/games", gameController.GetGamesByPlayer)
 	r.HandleFunc("/api/stats/h2h/{first_player}/{second_player}", statsController.GetHeadToHeadStats)
