@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Home from './pages/Home';
 import Game from './pages/Game';
 import Matchmaking from './pages/Matchmaking';
+import Challenge from './pages/Challenge';
+import Leaderboard from './pages/Leaderboard';
 import NavBar from './components/NavBar';
 import './App.css';
 
@@ -197,6 +199,8 @@ function App() {
         <Route path="/" element={<Home player={player} setPlayer={setPlayer} />} />
         <Route path="/game/:id" element={<Game />} />
         <Route path="/matchmaking" element={<Matchmaking />} />
+        <Route path="/challenge" element={<Challenge />} />
+        <Route path="/leaderboard" element={<Leaderboard />} />
       </Routes>
     </Router>
   );

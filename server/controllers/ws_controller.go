@@ -18,8 +18,9 @@ const (
 )
 
 type WSMessage struct {
-	Type  string `json:"type"`
-	Guess string `json:"guess,omitempty"`
+	Type     string `json:"type"`
+	Guess    string `json:"guess,omitempty"`
+	PlayerID string `json:"player_id,omitempty"`
 }
 
 type WSController struct {
@@ -29,6 +30,18 @@ type WSController struct {
 	connections map[string]map[*websocket.Conn]bool
 	mu          sync.RWMutex
 }
+
+// Add matchmaking queue and handler
+var matchmakingQueue = struct {
+	clients []struct {
+		conn     *websocket.Conn
+		playerID string
+	}
+	sync.Mutex
+}{clients: []struct {
+	conn     *websocket.Conn
+	playerID string
+}{}}
 
 func NewWSController(gameService *services.GameService) *WSController {
 	upgrader := websocket.Upgrader{
@@ -55,7 +68,7 @@ func (ws *WSController) HandleWebSocket(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Register connection
+	// Register connection (no log)
 	ws.mu.Lock()
 	if _, ok := ws.connections[gameID]; !ok {
 		ws.connections[gameID] = make(map[*websocket.Conn]bool)
@@ -64,6 +77,7 @@ func (ws *WSController) HandleWebSocket(w http.ResponseWriter, r *http.Request) 
 	ws.mu.Unlock()
 
 	defer func() {
+		// No log for normal close
 		conn.Close()
 		ws.mu.Lock()
 		delete(ws.connections[gameID], conn)
@@ -76,7 +90,10 @@ func (ws *WSController) HandleWebSocket(w http.ResponseWriter, r *http.Request) 
 	for {
 		_, msgData, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("WebSocket read error: %v", err)
+			// Only log unexpected errors (not normal close 1000 or 1006)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				log.Printf("WebSocket unexpected close for game %s: %v", gameID, err)
+			}
 			break
 		}
 
@@ -85,6 +102,8 @@ func (ws *WSController) HandleWebSocket(w http.ResponseWriter, r *http.Request) 
 			log.Printf("Invalid JSON: %v", err)
 			continue
 		}
+
+		// No log for every message received
 
 		switch msg.Type {
 		case JOIN_MSG:
@@ -96,12 +115,21 @@ func (ws *WSController) HandleWebSocket(w http.ResponseWriter, r *http.Request) 
 			ws.sendGameState(conn, game)
 
 		case GUESS_MSG:
-			game, err := ws.gameService.SubmitGuess(ctx, gameID, msg.Guess)
+			game, err := ws.gameService.GetByID(ctx, gameID)
+			if err != nil || game == nil {
+				log.Printf("Failed to get game for GUESS: %v", err)
+				continue
+			}
+			if msg.PlayerID != game.CurrentPlayer {
+				// Not this player's turn, ignore
+				continue
+			}
+			updatedGame, err := ws.gameService.SubmitGuess(ctx, gameID, msg.Guess, msg.PlayerID)
 			if err != nil {
 				log.Printf("Failed to submit guess: %v", err)
 				continue
 			}
-			ws.broadcastGameState(gameID, game)
+			ws.broadcastGameState(gameID, updatedGame)
 
 		default:
 			log.Printf("Unknown message type: %s", msg.Type)
@@ -109,8 +137,24 @@ func (ws *WSController) HandleWebSocket(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// sendGameState sends the game state to a single connection, omitting the solution unless the game is over, and including feedback.
 func (ws *WSController) sendGameState(conn *websocket.Conn, game *models.Game) {
-	data, err := json.Marshal(game)
+	resp := make(map[string]interface{})
+	resp["id"] = game.ID
+	resp["created_at"] = game.CreatedAt
+	resp["updated_at"] = game.UpdatedAt
+	resp["first_player"] = game.FirstPlayer
+	resp["second_player"] = game.SecondPlayer
+	resp["current_player"] = game.CurrentPlayer
+	resp["result"] = game.Result
+	resp["guesses"] = game.Guesses
+	feedbacks := ws.gameService.GetFeedbacks(game)
+	resp["feedback"] = feedbacks
+	// Only send solution if game is over
+	if game.Result != "" {
+		resp["solution"] = game.Solution
+	}
+	data, err := json.Marshal(resp)
 	if err != nil {
 		log.Printf("Failed to marshal game state: %v", err)
 		return
@@ -120,8 +164,23 @@ func (ws *WSController) sendGameState(conn *websocket.Conn, game *models.Game) {
 	}
 }
 
+// broadcastGameState sends the game state to all connections for a game, omitting the solution unless the game is over, and including feedback.
 func (ws *WSController) broadcastGameState(gameID string, game *models.Game) {
-	data, err := json.Marshal(game)
+	resp := make(map[string]interface{})
+	resp["id"] = game.ID
+	resp["created_at"] = game.CreatedAt
+	resp["updated_at"] = game.UpdatedAt
+	resp["first_player"] = game.FirstPlayer
+	resp["second_player"] = game.SecondPlayer
+	resp["current_player"] = game.CurrentPlayer
+	resp["result"] = game.Result
+	resp["guesses"] = game.Guesses
+	feedbacks := ws.gameService.GetFeedbacks(game)
+	resp["feedback"] = feedbacks
+	if game.Result != "" {
+		resp["solution"] = game.Solution
+	}
+	data, err := json.Marshal(resp)
 	if err != nil {
 		log.Printf("Failed to marshal game state: %v", err)
 		return
@@ -141,6 +200,76 @@ func (ws *WSController) broadcastGameState(gameID string, game *models.Game) {
 				delete(ws.connections, gameID)
 			}
 			ws.mu.Unlock()
+		}
+	}
+}
+
+func (ws *WSController) HandleMatchmakingWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := ws.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		http.Error(w, "Could not upgrade to WebSocket", http.StatusBadRequest)
+		return
+	}
+	defer conn.Close()
+
+	// Read player ID from first message
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		return
+	}
+	var joinMsg struct {
+		Type     string `json:"type"`
+		PlayerID string `json:"player_id"`
+	}
+	if err := json.Unmarshal(msg, &joinMsg); err != nil || joinMsg.Type != "join" || joinMsg.PlayerID == "" {
+		return
+	}
+
+	// Add to matchmaking queue
+	matchmakingQueue.Lock()
+	matchmakingQueue.clients = append(matchmakingQueue.clients, struct {
+		conn     *websocket.Conn
+		playerID string
+	}{conn, joinMsg.PlayerID})
+	// If two players, create a game and notify both
+	if len(matchmakingQueue.clients) >= 2 {
+		c1 := matchmakingQueue.clients[0]
+		c2 := matchmakingQueue.clients[1]
+		matchmakingQueue.clients = matchmakingQueue.clients[2:]
+		matchmakingQueue.Unlock()
+		// Create game
+		game, err := ws.gameService.CreateGame(r.Context(), c1.playerID, c2.playerID)
+		if err != nil {
+			return
+		}
+		resp := struct {
+			Type   string `json:"type"`
+			GameID string `json:"game_id"`
+		}{Type: "match_found", GameID: game.ID}
+		b, _ := json.Marshal(resp)
+		c1.conn.WriteMessage(websocket.TextMessage, b)
+		c2.conn.WriteMessage(websocket.TextMessage, b)
+		c1.conn.Close()
+		c2.conn.Close()
+		return
+	} else {
+		matchmakingQueue.Unlock()
+	}
+
+	// Wait for match or disconnect
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			// Remove from queue if still present
+			matchmakingQueue.Lock()
+			for i, c := range matchmakingQueue.clients {
+				if c.conn == conn {
+					matchmakingQueue.clients = append(matchmakingQueue.clients[:i], matchmakingQueue.clients[i+1:]...)
+					break
+				}
+			}
+			matchmakingQueue.Unlock()
+			return
 		}
 	}
 }

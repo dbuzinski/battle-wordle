@@ -1,16 +1,38 @@
 import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const Matchmaking: React.FC = () => {
+  const navigate = useNavigate();
   useEffect(() => {
-    // Check for playerId in localStorage (stub for cookie)
-    const playerId = localStorage.getItem('playerId');
-    if (!playerId) {
+    const player = JSON.parse(localStorage.getItem('player') || 'null');
+    if (!player || !player.id) {
       window.location.href = '/';
       return;
     }
-    // Stub: would start matchmaking here
-    // For now, just show spinner
-  }, []);
+    const ws = new WebSocket(
+      window.location.protocol === 'https:'
+        ? `wss://${window.location.host}/ws/matchmaking`
+        : `ws://${window.location.host}/ws/matchmaking`
+    );
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'join', player_id: player.id }));
+    };
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'match_found' && msg.game_id) {
+          ws.close();
+          navigate(`/game/${msg.game_id}`);
+        }
+      } catch {}
+    };
+    ws.onerror = () => {
+      // Optionally handle error
+    };
+    return () => {
+      ws.close();
+    };
+  }, [navigate]);
 
   return (
     <div style={{
@@ -54,6 +76,7 @@ const Matchmaking: React.FC = () => {
         </p>
       </div>
       {/* Spinner animation keyframes */}
+      {/* TODO: Move spinner CSS to a stylesheet for scalability */}
       <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }

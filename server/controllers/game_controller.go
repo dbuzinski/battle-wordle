@@ -66,3 +66,45 @@ func (c *GameController) GetGamesByPlayer(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(games)
 }
+
+func (c *GameController) CreateGame(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PlayerOne string `json:"player_one"`
+		PlayerTwo string `json:"player_two"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.PlayerOne == "" || req.PlayerTwo == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	game, err := c.service.CreateGame(ctx, req.PlayerOne, req.PlayerTwo)
+	if err != nil {
+		log.Printf("error creating game: %v", err)
+		http.Error(w, "Failed to create game", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(game)
+}
+
+func (c *GameController) SubmitGuess(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	gameID := vars["id"]
+	ctx := r.Context()
+	var req struct {
+		Guess    string `json:"guess"`
+		PlayerID string `json:"player_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Guess == "" || req.PlayerID == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	game, err := c.service.SubmitGuess(ctx, gameID, req.Guess, req.PlayerID)
+	if err != nil {
+		log.Printf("error submitting guess: %v", err)
+		http.Error(w, "Failed to submit guess", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(game)
+}

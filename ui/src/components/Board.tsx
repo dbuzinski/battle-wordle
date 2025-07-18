@@ -4,7 +4,7 @@ type FeedbackType = 'correct' | 'present' | 'absent' | undefined;
 
 type BoardProps = {
   guesses: string[]; // Each guess is a 5-letter string
-  feedback?: FeedbackType[][]; // Array of feedback arrays, one per guess
+  feedback: FeedbackType[][]; // Array of feedback arrays, one per guess
 };
 
 const getTileColor = (fb: FeedbackType) => {
@@ -39,10 +39,9 @@ const Board: React.FC<BoardProps> = ({ guesses, feedback = [] }) => {
                   background: getTileColor(feedback[rowIdx]?.[colIdx]),
                   color: 'white',
                   borderRadius: 6,
-                  transition: 'background 0.2s',
+                  transition: 'background 0.2s, transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
                   transform: isFlipped ? 'rotateX(360deg)' : 'none',
                   transitionDelay: delay,
-                  transitionProperty: 'background, transform',
                 }}
               >
                 {guess[colIdx] || ''}

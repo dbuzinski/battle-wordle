@@ -76,6 +76,7 @@ func main() {
 	r.HandleFunc("/api/player/{id}/games", gameController.GetGamesByPlayer)
 	r.HandleFunc("/api/stats/h2h/{first_player}/{second_player}", statsController.GetHeadToHeadStats)
 	r.HandleFunc("/ws/game/{id}", wsController.HandleWebSocket)
+	r.HandleFunc("/ws/matchmaking", wsController.HandleMatchmakingWebSocket)
 
 	// Middleware
 	// Define allowed CORS options
