@@ -6,6 +6,7 @@ import (
 	"battle-wordle/server/repositories"
 )
 
+// StatsService provides logic for player and game statistics.
 type StatsService struct {
 	gameRepo   *repositories.GameRepository
 	playerRepo *repositories.PlayerRepository
@@ -17,10 +18,12 @@ type HeadToHeadStats struct {
 	Draws            int `json:"draws"`
 }
 
+// NewStatsService creates a new StatsService.
 func NewStatsService(gameRepo *repositories.GameRepository, playerRepo *repositories.PlayerRepository) *StatsService {
 	return &StatsService{gameRepo: gameRepo, playerRepo: playerRepo}
 }
 
 func (s *StatsService) GetHeadToHeadStats(ctx context.Context, firstPlayerID string, secondPlayerID string) (HeadToHeadStats, error) {
+	// TODO: Implement StatsService logic or remove if not needed. Currently a stub.
 	return HeadToHeadStats{FirstPlayerWins: 0, SecondPlayerWins: 0, Draws: 0}, nil
 }

@@ -11,10 +11,12 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// GameController handles HTTP requests related to games.
 type GameController struct {
 	service *services.GameService
 }
 
+// NewGameController creates a new GameController.
 func NewGameController(service *services.GameService) *GameController {
 	return &GameController{service: service}
 }

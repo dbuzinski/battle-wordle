@@ -6,6 +6,7 @@ import (
 	"sync"
 )
 
+// MatchmakingService handles player matchmaking and challenge invitations.
 type MatchmakingService struct {
 	gameService       *GameService
 	queue             []matchmakingClient
@@ -19,6 +20,7 @@ type matchmakingClient struct {
 	Conn     interface{} // Controller can use *websocket.Conn or any connection type
 }
 
+// NewMatchmakingService creates a new MatchmakingService.
 func NewMatchmakingService(gameService *GameService) *MatchmakingService {
 	return &MatchmakingService{
 		gameService:       gameService,

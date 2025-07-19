@@ -14,11 +14,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// GameService provides business logic for managing games.
 type GameService struct {
 	repo     *repositories.GameRepository
 	wordList []string
 }
 
+// NewGameService creates a new GameService.
 func NewGameService(repo *repositories.GameRepository, wordList []string) *GameService {
 	return &GameService{repo: repo, wordList: wordList}
 }

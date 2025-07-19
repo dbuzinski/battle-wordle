@@ -9,10 +9,12 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// StatsController handles HTTP requests related to player and game statistics.
 type StatsController struct {
 	service *services.StatsService
 }
 
+// NewStatsController creates a new StatsController.
 func NewStatsController(service *services.StatsService) *StatsController {
 	return &StatsController{service: service}
 }

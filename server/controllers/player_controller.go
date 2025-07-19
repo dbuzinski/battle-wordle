@@ -12,15 +12,17 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// PlayerController handles HTTP requests related to players.
 type PlayerController struct {
 	service *services.PlayerService
 }
 
+// NewPlayerController creates a new PlayerController.
 func NewPlayerController(service *services.PlayerService) *PlayerController {
 	return &PlayerController{service: service}
 }
 
-func (c *PlayerController) GetPlayerById(w http.ResponseWriter, r *http.Request) {
+func (c *PlayerController) GetPlayerByID(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	playerID := vars["id"]
 	ctx := r.Context()

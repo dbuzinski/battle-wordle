@@ -13,23 +13,15 @@ import (
 	"github.com/google/uuid"
 )
 
-var jwtSecret = []byte("your-secret-key") // TODO: move to config
-
-func GenerateJWT(playerID string) (string, error) {
-	claims := jwt.MapClaims{
-		"player_id": playerID,
-		"exp":       time.Now().Add(24 * time.Hour).Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
-}
-
+// PlayerService provides business logic for managing players.
 type PlayerService struct {
-	repo *repositories.PlayerRepository
+	repo      *repositories.PlayerRepository
+	jwtSecret string
 }
 
-func NewPlayerService(repo *repositories.PlayerRepository) *PlayerService {
-	return &PlayerService{repo: repo}
+// NewPlayerService creates a new PlayerService.
+func NewPlayerService(repo *repositories.PlayerRepository, jwtSecret string) *PlayerService {
+	return &PlayerService{repo: repo, jwtSecret: jwtSecret}
 }
 
 func (s *PlayerService) GetByID(ctx context.Context, playerID string) (*models.Player, error) {
@@ -46,7 +38,7 @@ func (s *PlayerService) CreatePlayer(ctx context.Context, name string, password 
 			Name:       name,
 			Registered: false,
 			Elo:        nil,
-			CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+			CreatedAt:  time.Now().UTC(),
 		}
 		if err := s.repo.CreatePlayer(ctx, player); err != nil {
 			if err.Error() == "username_taken" {
@@ -83,7 +75,7 @@ func (s *PlayerService) CreatePlayer(ctx context.Context, name string, password 
 				if err != nil {
 					return nil, nil, err
 				}
-				token, err := GenerateJWT(playerID)
+				token, err := s.GenerateJWT(playerID)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -111,9 +103,9 @@ func (s *PlayerService) CreatePlayer(ctx context.Context, name string, password 
 			Registered:   true,
 			PasswordHash: ptr(string(hash)),
 			Elo:          nil,
-			CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+			CreatedAt:    time.Now().UTC(),
 		}
-		token, err := GenerateJWT(playerID)
+		token, err := s.GenerateJWT(playerID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -138,7 +130,7 @@ func (s *PlayerService) Login(ctx context.Context, name string, password string)
 	if err := bcrypt.CompareHashAndPassword([]byte(*player.PasswordHash), []byte(password)); err != nil {
 		return nil, nil, err
 	}
-	token, err := GenerateJWT(player.ID)
+	token, err := s.GenerateJWT(player.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -148,6 +140,15 @@ func (s *PlayerService) Login(ctx context.Context, name string, password string)
 // SearchByName returns players whose names contain the substring (case-insensitive)
 func (s *PlayerService) SearchByName(ctx context.Context, name string) ([]*models.Player, error) {
 	return s.repo.SearchByName(ctx, name)
+}
+
+func (s *PlayerService) GenerateJWT(playerID string) (string, error) {
+	claims := jwt.MapClaims{
+		"player_id": playerID,
+		"exp":       time.Now().Add(24 * time.Hour).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(s.jwtSecret))
 }
 
 func ptr[T any](v T) *T { return &v }

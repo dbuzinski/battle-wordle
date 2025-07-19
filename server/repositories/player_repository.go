@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -36,7 +37,7 @@ func (r *PlayerRepository) initializeTable() error {
 				registered BOOLEAN NOT NULL,
 				password_hash TEXT,
 				elo INTEGER,
-				created_at TEXT NOT NULL
+				created_at TIMESTAMP NOT NULL
         );
     `
 	_, err := r.db.Exec(query)
@@ -55,8 +56,9 @@ func (r *PlayerRepository) GetByID(ctx context.Context, id string) (*models.Play
 	var player models.Player
 	var passwordHash sql.NullString
 	var elo sql.NullInt64
+	var createdAt time.Time
 
-	err := row.Scan(&player.ID, &player.Name, &player.Registered, &passwordHash, &elo, &player.CreatedAt)
+	err := row.Scan(&player.ID, &player.Name, &player.Registered, &passwordHash, &elo, &createdAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Not found
@@ -70,6 +72,7 @@ func (r *PlayerRepository) GetByID(ctx context.Context, id string) (*models.Play
 		eloInt := int(elo.Int64)
 		player.Elo = &eloInt
 	}
+	player.CreatedAt = createdAt
 
 	return &player, nil
 }
@@ -112,8 +115,9 @@ func (r *PlayerRepository) GetByName(ctx context.Context, name string) (*models.
 	var player models.Player
 	var passwordHash sql.NullString
 	var elo sql.NullInt64
+	var createdAt time.Time
 
-	err := row.Scan(&player.ID, &player.Name, &player.Registered, &passwordHash, &elo, &player.CreatedAt)
+	err := row.Scan(&player.ID, &player.Name, &player.Registered, &passwordHash, &elo, &createdAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Not found
@@ -127,6 +131,7 @@ func (r *PlayerRepository) GetByName(ctx context.Context, name string) (*models.
 		eloInt := int(elo.Int64)
 		player.Elo = &eloInt
 	}
+	player.CreatedAt = createdAt
 
 	return &player, nil
 }
@@ -176,10 +181,12 @@ func (r *PlayerRepository) SearchByName(ctx context.Context, name string) ([]*mo
 	for rows.Next() {
 		var p models.Player
 		var elo *int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Registered, &elo, &p.CreatedAt); err != nil {
+		var createdAt time.Time
+		if err := rows.Scan(&p.ID, &p.Name, &p.Registered, &elo, &createdAt); err != nil {
 			return nil, err
 		}
 		p.Elo = elo
+		p.CreatedAt = createdAt
 		players = append(players, &p)
 	}
 	return players, nil

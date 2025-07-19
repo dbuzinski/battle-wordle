@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"os"
 
+	"battle-wordle/server/config"
 	"battle-wordle/server/controllers"
 	"battle-wordle/server/repositories"
 	"battle-wordle/server/services"
+	"battle-wordle/server/ws"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -40,14 +42,17 @@ func loadWordList(path string) ([]string, error) {
 }
 
 func main() {
-	dbPath := "./battlewordle.db"
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
-	// Wire up services
-	gameRepository, err := repositories.NewGameRepository(dbPath)
+	// Wire up services using cfg.DBPath, cfg.JWTSecret, cfg.Port
+	gameRepository, err := repositories.NewGameRepository(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("Failed to create game repository: %v", err)
 	}
-	playerRepository, err := repositories.NewPlayerRepository(dbPath)
+	playerRepository, err := repositories.NewPlayerRepository(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("Failed to create player repository: %v", err)
 	}
@@ -58,15 +63,19 @@ func main() {
 		log.Fatalf("Failed to load word list: %v", err)
 	}
 
+	// Pass cfg.JWTSecret to player service (update player_service.go to accept it)
 	gameService := services.NewGameService(gameRepository, wordList)
-	playerService := services.NewPlayerService(playerRepository)
+	playerService := services.NewPlayerService(playerRepository, cfg.JWTSecret)
 	statsService := services.NewStatsService(gameRepository, playerRepository)
 	matchmakingService := services.NewMatchmakingService(gameService)
 
 	gameController := controllers.NewGameController(gameService)
 	playerController := controllers.NewPlayerController(playerService)
 	statsController := controllers.NewStatsController(statsService)
-	wsController := controllers.NewWSController(gameService, playerService, matchmakingService)
+	gameHub := ws.NewHub()
+	wsGameController := controllers.NewWSGameController(gameService, playerService, gameHub)
+	wsMatchmakingController := controllers.NewWSMatchmakingController(matchmakingService)
+	wsNotificationController := controllers.NewWSNotificationController(gameService, playerService, matchmakingService)
 
 	// Set up routes
 	r := mux.NewRouter()
@@ -74,12 +83,12 @@ func main() {
 	r.HandleFunc("/api/player/register", playerController.Register)
 	r.HandleFunc("/api/player/login", playerController.Login)
 	r.HandleFunc("/api/player/search", playerController.SearchPlayers)
-	r.HandleFunc("/api/player/{id}", playerController.GetPlayerById)
+	r.HandleFunc("/api/player/{id}", playerController.GetPlayerByID)
 	r.HandleFunc("/api/player/{id}/games", gameController.GetGamesByPlayer)
 	r.HandleFunc("/api/stats/h2h/{first_player}/{second_player}", statsController.GetHeadToHeadStats)
-	r.HandleFunc("/ws/game/{id}", wsController.HandleWebSocket)
-	r.HandleFunc("/ws/matchmaking", wsController.HandleMatchmakingWebSocket)
-	r.HandleFunc("/ws/notifications", wsController.HandleNotificationsWebSocket)
+	r.HandleFunc("/ws/game/{id}", wsGameController.HandleWebSocket)
+	r.HandleFunc("/ws/matchmaking", wsMatchmakingController.HandleWebSocket)
+	r.HandleFunc("/ws/notifications", wsNotificationController.HandleWebSocket)
 
 	// Middleware
 	// Define allowed CORS options
@@ -90,8 +99,8 @@ func main() {
 	)
 
 	// Start server
-	log.Println("Server is running on port 8080")
-	if err := http.ListenAndServe(":8080", corsHandler(r)); err != nil {
+	log.Printf("Server is running on port %s", cfg.Port)
+	if err := http.ListenAndServe(":"+cfg.Port, corsHandler(r)); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
