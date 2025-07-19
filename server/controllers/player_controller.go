@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"battle-wordle/server/models"
+	"battle-wordle/server/dto"
 	"battle-wordle/server/services"
 
 	"github.com/google/uuid"
@@ -42,7 +42,7 @@ func (c *PlayerController) GetPlayerByID(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(game)
+	json.NewEncoder(w).Encode(dto.MapPlayer(game))
 }
 
 func (c *PlayerController) Register(w http.ResponseWriter, r *http.Request) {
@@ -74,14 +74,14 @@ func (c *PlayerController) Register(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if player.Registered && jwtToken != nil {
 		json.NewEncoder(w).Encode(struct {
-			Player *models.Player `json:"player"`
+			Player *dto.PlayerDTO `json:"player"`
 			Token  string         `json:"token"`
 		}{
-			Player: player,
+			Player: dto.MapPlayer(player),
 			Token:  *jwtToken,
 		})
 	} else {
-		json.NewEncoder(w).Encode(player)
+		json.NewEncoder(w).Encode(dto.MapPlayer(player))
 	}
 }
 
@@ -105,10 +105,10 @@ func (c *PlayerController) Login(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(struct {
-		Player *models.Player `json:"player"`
+		Player *dto.PlayerDTO `json:"player"`
 		Token  string         `json:"token"`
 	}{
-		Player: player,
+		Player: dto.MapPlayer(player),
 		Token:  *jwtToken,
 	})
 }
@@ -132,9 +132,12 @@ func (c *PlayerController) SearchPlayers(w http.ResponseWriter, r *http.Request)
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
-	results := make([]playerResult, 0, len(players))
+	results := make([]dto.PlayerDTO, 0, len(players))
 	for _, p := range players {
-		results = append(results, playerResult{ID: p.ID, Name: p.Name})
+		mapped := dto.MapPlayer(p)
+		if mapped != nil {
+			results = append(results, *mapped)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)

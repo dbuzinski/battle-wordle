@@ -81,12 +81,16 @@ func (c *WSNotificationController) HandleWebSocket(w http.ResponseWriter, r *htt
 			if err := json.Unmarshal(msgData, &invite); err != nil || invite.From == "" || invite.To == "" {
 				continue
 			}
+			log.Printf("[notif-ws] challenge_invite: from=%s to=%s from_name=%s rematch=%v", invite.From, invite.To, invite.FromName, invite.Rematch)
 			// Forward to target player if online
 			if targetConn, ok := c.matchmakingService.OnlineConnection(invite.To); ok {
 				b, _ := json.Marshal(invite)
+				log.Printf("[notif-ws] Forwarding challenge_invite to %s: %s", invite.To, string(b))
 				if wsConn, ok := targetConn.(*websocket.Conn); ok {
 					wsConn.WriteMessage(websocket.TextMessage, b)
 				}
+			} else {
+				log.Printf("[notif-ws] Target player %s not online for challenge_invite", invite.To)
 			}
 		case "challenge_response":
 			var resp struct {
@@ -99,6 +103,7 @@ func (c *WSNotificationController) HandleWebSocket(w http.ResponseWriter, r *htt
 			if err := json.Unmarshal(msgData, &resp); err != nil || resp.From == "" || resp.To == "" {
 				continue
 			}
+			log.Printf("[notif-ws] challenge_response: from=%s to=%s accepted=%v rematch=%v", resp.From, resp.To, resp.Accepted, resp.Rematch)
 			var gameID *string
 			if resp.Accepted {
 				// Create a new game if not a rematch (for rematch, frontend may handle differently)
@@ -106,6 +111,9 @@ func (c *WSNotificationController) HandleWebSocket(w http.ResponseWriter, r *htt
 				if err == nil && game != nil {
 					gid := game.ID
 					gameID = &gid
+					log.Printf("[notif-ws] Created game for challenge: id=%s", game.ID)
+				} else {
+					log.Printf("[notif-ws] Failed to create game for challenge: %v", err)
 				}
 			}
 			// Send challenge_result to both players
@@ -127,9 +135,12 @@ func (c *WSNotificationController) HandleWebSocket(w http.ResponseWriter, r *htt
 			b, _ := json.Marshal(result)
 			for _, pid := range []string{resp.From, resp.To} {
 				if targetConn, ok := c.matchmakingService.OnlineConnection(pid); ok {
+					log.Printf("[notif-ws] Sending challenge_result to %s: %s", pid, string(b))
 					if wsConn, ok := targetConn.(*websocket.Conn); ok {
 						wsConn.WriteMessage(websocket.TextMessage, b)
 					}
+				} else {
+					log.Printf("[notif-ws] Target player %s not online for challenge_result", pid)
 				}
 			}
 		case "rematch_offer":

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"battle-wordle/server/dto"
 	"battle-wordle/server/services"
 
 	"github.com/google/uuid"
@@ -13,12 +14,13 @@ import (
 
 // GameController handles HTTP requests related to games.
 type GameController struct {
-	service *services.GameService
+	service       *services.GameService
+	playerService *services.PlayerService
 }
 
 // NewGameController creates a new GameController.
-func NewGameController(service *services.GameService) *GameController {
-	return &GameController{service: service}
+func NewGameController(service *services.GameService, playerService *services.PlayerService) *GameController {
+	return &GameController{service: service, playerService: playerService}
 }
 
 func (c *GameController) GetGameByID(w http.ResponseWriter, r *http.Request) {
@@ -41,8 +43,22 @@ func (c *GameController) GetGameByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	firstPlayer, _ := c.playerService.GetByID(ctx, game.FirstPlayer)
+	secondPlayer, _ := c.playerService.GetByID(ctx, game.SecondPlayer)
+	feedbacks := c.service.GetFeedbacks(game)
+	feedbackStrings := make([][]string, len(feedbacks))
+	for i, fb := range feedbacks {
+		feedbackStrings[i] = make([]string, len(fb))
+		for j, f := range fb {
+			feedbackStrings[i][j] = string(f)
+		}
+	}
+	var solutionPtr *string
+	if game.Result != "" {
+		solutionPtr = &game.Solution
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(game)
+	json.NewEncoder(w).Encode(dto.MapGame(game, firstPlayer, secondPlayer, feedbackStrings, solutionPtr))
 }
 
 func (c *GameController) GetGamesByPlayer(w http.ResponseWriter, r *http.Request) {
@@ -65,8 +81,26 @@ func (c *GameController) GetGamesByPlayer(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	var dtos []dto.GameDTO
+	for _, game := range games {
+		firstPlayer, _ := c.playerService.GetByID(ctx, game.FirstPlayer)
+		secondPlayer, _ := c.playerService.GetByID(ctx, game.SecondPlayer)
+		feedbacks := c.service.GetFeedbacks(game)
+		feedbackStrings := make([][]string, len(feedbacks))
+		for i, fb := range feedbacks {
+			feedbackStrings[i] = make([]string, len(fb))
+			for j, f := range fb {
+				feedbackStrings[i][j] = string(f)
+			}
+		}
+		var solutionPtr *string
+		if game.Result != "" {
+			solutionPtr = &game.Solution
+		}
+		dtos = append(dtos, *dto.MapGame(game, firstPlayer, secondPlayer, feedbackStrings, solutionPtr))
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(games)
+	json.NewEncoder(w).Encode(dtos)
 }
 
 func (c *GameController) CreateGame(w http.ResponseWriter, r *http.Request) {

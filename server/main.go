@@ -9,6 +9,7 @@ import (
 
 	"battle-wordle/server/config"
 	"battle-wordle/server/controllers"
+	"battle-wordle/server/middleware"
 	"battle-wordle/server/repositories"
 	"battle-wordle/server/services"
 	"battle-wordle/server/ws"
@@ -69,7 +70,7 @@ func main() {
 	statsService := services.NewStatsService(gameRepository, playerRepository)
 	matchmakingService := services.NewMatchmakingService(gameService)
 
-	gameController := controllers.NewGameController(gameService)
+	gameController := controllers.NewGameController(gameService, playerService)
 	playerController := controllers.NewPlayerController(playerService)
 	statsController := controllers.NewStatsController(statsService)
 	gameHub := ws.NewHub()
@@ -77,18 +78,21 @@ func main() {
 	wsMatchmakingController := controllers.NewWSMatchmakingController(matchmakingService)
 	wsNotificationController := controllers.NewWSNotificationController(gameService, playerService, matchmakingService)
 
-	// Set up routes
-	r := mux.NewRouter()
+	// Set up API routes
+	apiRouter := mux.NewRouter()
+	apiRouter.HandleFunc("/api/player/register", playerController.Register)
+	apiRouter.HandleFunc("/api/player/login", playerController.Login)
+	apiRouter.HandleFunc("/api/player/search", playerController.SearchPlayers)
+	apiRouter.HandleFunc("/api/player/{id}", playerController.GetPlayerByID)
+	apiRouter.HandleFunc("/api/player/{id}/games", gameController.GetGamesByPlayer)
+	apiRouter.HandleFunc("/api/stats/h2h/{first_player}/{second_player}", statsController.GetHeadToHeadStats)
+	// ... add any other API routes ...
 
-	r.HandleFunc("/api/player/register", playerController.Register)
-	r.HandleFunc("/api/player/login", playerController.Login)
-	r.HandleFunc("/api/player/search", playerController.SearchPlayers)
-	r.HandleFunc("/api/player/{id}", playerController.GetPlayerByID)
-	r.HandleFunc("/api/player/{id}/games", gameController.GetGamesByPlayer)
-	r.HandleFunc("/api/stats/h2h/{first_player}/{second_player}", statsController.GetHeadToHeadStats)
-	r.HandleFunc("/ws/game/{id}", wsGameController.HandleWebSocket)
-	r.HandleFunc("/ws/matchmaking", wsMatchmakingController.HandleWebSocket)
-	r.HandleFunc("/ws/notifications", wsNotificationController.HandleWebSocket)
+	// Set up WebSocket routes (no middleware)
+	wsRouter := mux.NewRouter()
+	wsRouter.HandleFunc("/ws/game/{id}", wsGameController.HandleWebSocket)
+	wsRouter.HandleFunc("/ws/matchmaking", wsMatchmakingController.HandleWebSocket)
+	wsRouter.HandleFunc("/ws/notifications", wsNotificationController.HandleWebSocket)
 
 	// Middleware
 	// Define allowed CORS options
@@ -98,9 +102,17 @@ func main() {
 		handlers.AllowedHeaders([]string{"Content-Type", "Authorization"}),
 	)
 
+	// Compose middleware for API only
+	apiHandler := middleware.Logger(middleware.ErrorHandler(corsHandler(apiRouter)))
+
+	// Main router
+	mainRouter := mux.NewRouter()
+	mainRouter.PathPrefix("/ws/").Handler(wsRouter)
+	mainRouter.PathPrefix("/").Handler(apiHandler)
+
 	// Start server
 	log.Printf("Server is running on port %s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, corsHandler(r)); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, mainRouter); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }
