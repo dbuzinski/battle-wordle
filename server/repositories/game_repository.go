@@ -204,3 +204,10 @@ func (r *GameRepository) UpdateGame(ctx context.Context, game *models.Game) erro
 	}
 	return nil
 }
+
+type GameRepositoryI interface {
+	CreateGame(ctx context.Context, game *models.Game) error
+	GetByID(ctx context.Context, id string) (*models.Game, error)
+	GetByPlayer(ctx context.Context, playerID string) ([]*models.Game, error)
+	UpdateGame(ctx context.Context, game *models.Game) error
+}

@@ -15,12 +15,12 @@ import (
 
 // PlayerService provides business logic for managing players.
 type PlayerService struct {
-	repo      *repositories.PlayerRepository
+	repo      repositories.PlayerRepositoryI
 	jwtSecret string
 }
 
 // NewPlayerService creates a new PlayerService.
-func NewPlayerService(repo *repositories.PlayerRepository, jwtSecret string) *PlayerService {
+func NewPlayerService(repo repositories.PlayerRepositoryI, jwtSecret string) *PlayerService {
 	return &PlayerService{repo: repo, jwtSecret: jwtSecret}
 }
 

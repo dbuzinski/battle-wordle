@@ -8,7 +8,7 @@ import (
 
 // MatchmakingService handles player matchmaking and challenge invitations.
 type MatchmakingService struct {
-	gameService       *GameService
+	gameService       GameServiceI
 	queue             []matchmakingClient
 	mu                sync.Mutex
 	online            map[string]interface{} // playerID -> connection
@@ -21,7 +21,7 @@ type matchmakingClient struct {
 }
 
 // NewMatchmakingService creates a new MatchmakingService.
-func NewMatchmakingService(gameService *GameService) *MatchmakingService {
+func NewMatchmakingService(gameService GameServiceI) *MatchmakingService {
 	return &MatchmakingService{
 		gameService:       gameService,
 		queue:             make([]matchmakingClient, 0),

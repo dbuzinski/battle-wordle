@@ -16,12 +16,12 @@ import (
 
 // GameService provides business logic for managing games.
 type GameService struct {
-	repo     *repositories.GameRepository
+	repo     repositories.GameRepositoryI
 	wordList []string
 }
 
 // NewGameService creates a new GameService.
-func NewGameService(repo *repositories.GameRepository, wordList []string) *GameService {
+func NewGameService(repo repositories.GameRepositoryI, wordList []string) *GameService {
 	return &GameService{repo: repo, wordList: wordList}
 }
 
@@ -143,4 +143,8 @@ func (s *GameService) GetFeedbacks(game *models.Game) [][]FeedbackType {
 		feedbacks[i] = getFeedback(guess, game.Solution)
 	}
 	return feedbacks
+}
+
+type GameServiceI interface {
+	CreateGame(ctx context.Context, PlayerOne string, PlayerTwo string) (*models.Game, error)
 }

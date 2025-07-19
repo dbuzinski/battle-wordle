@@ -19,14 +19,15 @@ func NewPlayerRepository(dbPath string) (*PlayerRepository, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	repo := &PlayerRepository{db: db}
-
+	repo := NewPlayerRepositoryFromDB(db)
 	if err := repo.initializeTable(); err != nil {
 		return nil, err
 	}
-
 	return repo, nil
+}
+
+func NewPlayerRepositoryFromDB(db *sql.DB) *PlayerRepository {
+	return &PlayerRepository{db: db}
 }
 
 func (r *PlayerRepository) initializeTable() error {
@@ -190,4 +191,12 @@ func (r *PlayerRepository) SearchByName(ctx context.Context, name string) ([]*mo
 		players = append(players, &p)
 	}
 	return players, nil
+}
+
+type PlayerRepositoryI interface {
+	CreatePlayer(ctx context.Context, player *models.Player) error
+	GetByID(ctx context.Context, id string) (*models.Player, error)
+	GetByName(ctx context.Context, name string) (*models.Player, error)
+	UpdateGuestToRegistered(ctx context.Context, id string, newName string, passwordHash string) error
+	SearchByName(ctx context.Context, name string) ([]*models.Player, error)
 }

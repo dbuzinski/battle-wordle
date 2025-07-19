@@ -119,8 +119,22 @@ func (c *GameController) CreateGame(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create game", http.StatusInternalServerError)
 		return
 	}
+	firstPlayer, _ := c.playerService.GetByID(ctx, game.FirstPlayer)
+	secondPlayer, _ := c.playerService.GetByID(ctx, game.SecondPlayer)
+	feedbacks := c.service.GetFeedbacks(game)
+	feedbackStrings := make([][]string, len(feedbacks))
+	for i, fb := range feedbacks {
+		feedbackStrings[i] = make([]string, len(fb))
+		for j, f := range fb {
+			feedbackStrings[i][j] = string(f)
+		}
+	}
+	var solutionPtr *string
+	if game.Result != "" {
+		solutionPtr = &game.Solution
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(game)
+	json.NewEncoder(w).Encode(dto.MapGame(game, firstPlayer, secondPlayer, feedbackStrings, solutionPtr))
 }
 
 func (c *GameController) SubmitGuess(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +155,20 @@ func (c *GameController) SubmitGuess(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to submit guess", http.StatusInternalServerError)
 		return
 	}
+	firstPlayer, _ := c.playerService.GetByID(ctx, game.FirstPlayer)
+	secondPlayer, _ := c.playerService.GetByID(ctx, game.SecondPlayer)
+	feedbacks := c.service.GetFeedbacks(game)
+	feedbackStrings := make([][]string, len(feedbacks))
+	for i, fb := range feedbacks {
+		feedbackStrings[i] = make([]string, len(fb))
+		for j, f := range fb {
+			feedbackStrings[i][j] = string(f)
+		}
+	}
+	var solutionPtr *string
+	if game.Result != "" {
+		solutionPtr = &game.Solution
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(game)
+	json.NewEncoder(w).Encode(dto.MapGame(game, firstPlayer, secondPlayer, feedbackStrings, solutionPtr))
 }
