@@ -19,17 +19,8 @@ type GameService struct {
 	wordList []string
 }
 
-// NewGameService creates a new GameService with the provided word list.
 func NewGameService(repo *repositories.GameRepository, wordList []string) *GameService {
 	return &GameService{repo: repo, wordList: wordList}
-}
-
-func (s *GameService) GetByID(ctx context.Context, gameID string) (*models.Game, error) {
-	return s.repo.GetByID(ctx, gameID)
-}
-
-func (s *GameService) GetByPlayer(ctx context.Context, playerID string) ([]*models.Game, error) {
-	return s.repo.GetByPlayer(ctx, playerID)
 }
 
 func (s *GameService) CreateGame(ctx context.Context, PlayerOne string, PlayerTwo string) (*models.Game, error) {
@@ -55,6 +46,14 @@ func (s *GameService) CreateGame(ctx context.Context, PlayerOne string, PlayerTw
 		return nil, err
 	}
 	return game, nil
+}
+
+func (s *GameService) GetByID(ctx context.Context, gameID string) (*models.Game, error) {
+	return s.repo.GetByID(ctx, gameID)
+}
+
+func (s *GameService) GetByPlayer(ctx context.Context, playerID string) ([]*models.Game, error) {
+	return s.repo.GetByPlayer(ctx, playerID)
 }
 
 func (s *GameService) SubmitGuess(ctx context.Context, gameID string, guess string, playerID string) (*models.Game, error) {
@@ -93,7 +92,6 @@ func (s *GameService) SubmitGuess(ctx context.Context, gameID string, guess stri
 	return game, nil
 }
 
-// FeedbackType is a string: "correct", "present", or "absent"
 type FeedbackType string
 
 const (
@@ -102,7 +100,6 @@ const (
 	FeedbackAbsent  FeedbackType = "absent"
 )
 
-// getFeedback returns feedback for a single guess
 func getFeedback(guess, solution string) []FeedbackType {
 	guess = strings.ToUpper(guess)
 	solution = strings.ToUpper(solution)
@@ -111,7 +108,6 @@ func getFeedback(guess, solution string) []FeedbackType {
 	guessArr := []rune(guess)
 	used := make([]bool, len(solution))
 
-	// First pass: correct
 	for i := 0; i < len(solution); i++ {
 		if guessArr[i] == targetArr[i] {
 			feedback[i] = FeedbackCorrect
@@ -139,7 +135,6 @@ func getFeedback(guess, solution string) []FeedbackType {
 	return feedback
 }
 
-// GetFeedbacks returns feedback for all guesses in a game
 func (s *GameService) GetFeedbacks(game *models.Game) [][]FeedbackType {
 	feedbacks := make([][]FeedbackType, len(game.Guesses))
 	for i, guess := range game.Guesses {

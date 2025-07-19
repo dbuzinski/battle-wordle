@@ -110,3 +110,30 @@ func (c *PlayerController) Login(w http.ResponseWriter, r *http.Request) {
 		Token:  *jwtToken,
 	})
 }
+
+// SearchPlayers allows searching for players by (partial) name, case-insensitive
+func (c *PlayerController) SearchPlayers(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "Missing name query parameter", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	players, err := c.service.SearchByName(ctx, name)
+	if err != nil {
+		log.Printf("error searching players by name %q: %v", name, err)
+		http.Error(w, "Failed to search players", http.StatusInternalServerError)
+		return
+	}
+	// Return only id and name
+	type playerResult struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	results := make([]playerResult, 0, len(players))
+	for _, p := range players {
+		results = append(results, playerResult{ID: p.ID, Name: p.Name})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}

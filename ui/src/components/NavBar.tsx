@@ -68,17 +68,8 @@ const NavBar: React.FC<NavBarProps> = ({ isLoggedIn, playerName, onLoginClick, o
           </div>
         </button>
         {/* Title */}
-        <div className="navbar-title" style={{ flex: 1, textAlign: 'center', userSelect: 'none', minWidth: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <img 
-            src="/battlewordle-logo.png"
-            alt="Battle Wordle" 
-            style={{ 
-              height: '40px', 
-              width: 'auto', 
-              maxWidth: '200px',
-              objectFit: 'contain'
-            }} 
-          />
+        <div className="navbar-title" style={{ flex: 1, textAlign: 'center', fontWeight: 700, fontSize: '1.5rem', color: 'white', letterSpacing: '1px', userSelect: 'none', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          Battle Wordle
         </div>
         {/* Login/Logout */}
         <div className="navbar-actions" style={{ minWidth: 80, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>

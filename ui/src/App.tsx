@@ -1,12 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Home from './pages/Home';
 import Game from './pages/Game';
 import Matchmaking from './pages/Matchmaking';
-import Challenge from './pages/Challenge';
+import ChallengePage from './pages/Challenge';
 import Leaderboard from './pages/Leaderboard';
 import NavBar from './components/NavBar';
+import ChallengePopover from './components/ChallengePopover';
+import type { Challenge as ChallengeNotification } from './components/ChallengePopover';
 import './App.css';
+import { NotificationWebSocketProvider } from './components/NotificationWebSocketContext';
+import { useNavigate } from 'react-router-dom';
 
 // Define the Player type
 interface Player {
@@ -18,6 +22,8 @@ interface Player {
 }
 
 function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [player, setPlayer] = useState<Player | null>(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
@@ -26,6 +32,129 @@ function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Challenge popover state
+  const [challenges, setChallenges] = useState<ChallengeNotification[]>([]);
+
+  // Rematch popover state
+  const [rematchOffer, setRematchOffer] = useState<null | {
+    from: string;
+    fromName: string;
+    prevGameId: string;
+  }>(null);
+
+  // Global WebSocket for challenge notifications
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  useEffect(() => {
+    if (!player || !player.id) return;
+    const wsInstance = new WebSocket(
+      window.location.protocol === 'https:'
+        ? `wss://${window.location.host}/ws/notifications`
+        : `ws://${window.location.host}/ws/notifications`
+    );
+    setWs(wsInstance);
+    wsInstance.onopen = () => {
+      console.log('[Notification WS] Connected');
+      wsInstance.send(JSON.stringify({ type: 'join', player_id: player.id }));
+    };
+    wsInstance.onmessage = (event) => {
+      console.log('[Notification WS] Message:', event.data);
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'challenge_invite' && msg.from) {
+          // Only suppress rematch popover if:
+          // - it's a rematch
+          // - we're on the relevant game page
+          // - the challenger is the opponent from that game
+          const isRematch = !!msg.rematch;
+          if (
+            isRematch &&
+            location.pathname.startsWith('/game/')
+          ) {
+            const currentOpponentId = sessionStorage.getItem('currentGameOpponentId');
+            if (currentOpponentId && msg.from === currentOpponentId) {
+              // Suppress popover, let Game.tsx handle
+              return;
+            }
+          }
+          setChallenges((prev) => [
+            ...prev,
+            {
+              id: `${msg.from}-${isRematch ? 'rematch-' : ''}-${Date.now()}`,
+              fromName: msg.from_name || msg.from,
+              fromId: msg.from,
+              rematch: isRematch,
+            },
+          ]);
+        }
+        if (msg.type === 'challenge_result') {
+          console.log('[Notification WS] challenge_result:', msg);
+          if (msg.accepted && msg.game_id) {
+            if (player && (msg.to === player.id || msg.from === player.id)) {
+              navigate(`/game/${msg.game_id}`);
+            }
+          }
+        }
+        // Handle other notification types here
+      } catch {}
+    };
+    wsInstance.onerror = () => {};
+    return () => {
+      wsInstance.close();
+      setWs(null);
+    };
+  }, [player, location.pathname]);
+
+  const handleAcceptChallenge = (id: string) => {
+    setChallenges((prev) => prev.filter((c) => c.id !== id));
+    const challenge = challenges.find((c) => c.id === id);
+    if (!challenge) return;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'challenge_response',
+        from: player?.id,
+        to: challenge.fromId,
+        accepted: true,
+        rematch: challenge.rematch,
+      }));
+    }
+  };
+  const handleRejectChallenge = (id: string) => {
+    setChallenges((prev) => prev.filter((c) => c.id !== id));
+    const challenge = challenges.find((c) => c.id === id);
+    if (!challenge) return;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'challenge_response',
+        from: player?.id,
+        to: challenge.fromId,
+        accepted: false,
+        rematch: challenge.rematch,
+      }));
+    }
+  };
+
+  // Accept/Reject rematch handlers
+  const handleAcceptRematch = () => {
+    if (!rematchOffer || !ws) return;
+    ws.send(JSON.stringify({
+      type: 'rematch_response',
+      from: player?.id,
+      to: rematchOffer.from,
+      accepted: true,
+    }));
+    setRematchOffer(null);
+  };
+  const handleRejectRematch = () => {
+    if (!rematchOffer || !ws) return;
+    ws.send(JSON.stringify({
+      type: 'rematch_response',
+      from: player?.id,
+      to: rematchOffer.from,
+      accepted: false,
+    }));
+    setRematchOffer(null);
+  };
 
   // Register guest player on first visit
   useEffect(() => {
@@ -152,12 +281,18 @@ function App() {
   }
 
   return (
-    <Router>
+    <NotificationWebSocketProvider ws={ws}>
       <NavBar
         isLoggedIn={!!player?.registered}
         playerName={player?.name}
         onLoginClick={openLoginModal}
         onLogoutClick={handleLogout}
+      />
+      {/* Global Challenge Popover */}
+      <ChallengePopover
+        challenges={challenges}
+        onAccept={handleAcceptChallenge}
+        onReject={handleRejectChallenge}
       />
       {/* Login/Register Modal (global) */}
       {showLoginModal && (
@@ -199,10 +334,10 @@ function App() {
         <Route path="/" element={<Home player={player} setPlayer={setPlayer} />} />
         <Route path="/game/:id" element={<Game />} />
         <Route path="/matchmaking" element={<Matchmaking />} />
-        <Route path="/challenge" element={<Challenge />} />
+        <Route path="/challenge" element={<ChallengePage />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
       </Routes>
-    </Router>
+    </NotificationWebSocketProvider>
   );
 }
 

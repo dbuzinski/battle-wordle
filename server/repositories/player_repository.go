@@ -163,3 +163,24 @@ func (r *PlayerRepository) UpdateGuestToRegistered(ctx context.Context, id strin
 	}
 	return nil
 }
+
+// SearchByName returns players whose names contain the substring (case-insensitive)
+func (r *PlayerRepository) SearchByName(ctx context.Context, name string) ([]*models.Player, error) {
+	pattern := "%" + name + "%"
+	rows, err := r.db.QueryContext(ctx, `SELECT id, name, registered, elo, created_at FROM players WHERE lower(name) LIKE lower(?)`, pattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var players []*models.Player
+	for rows.Next() {
+		var p models.Player
+		var elo *int
+		if err := rows.Scan(&p.ID, &p.Name, &p.Registered, &elo, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		p.Elo = elo
+		players = append(players, &p)
+	}
+	return players, nil
+}

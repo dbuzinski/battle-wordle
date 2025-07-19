@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { FaPencilAlt } from 'react-icons/fa';
 
 // Define the Player type
@@ -20,6 +20,7 @@ const Home: React.FC<HomeProps> = ({ player, setPlayer }) => {
   const [newPlayerName, setNewPlayerName] = useState('');
   const navigate = useNavigate();
   const [recentGames, setRecentGames] = useState<any[] | null>(null);
+  const [playerNames, setPlayerNames] = useState<Record<string, string>>({});
   const [gamesLoading, setGamesLoading] = useState(false);
   const [gamesError, setGamesError] = useState<string | null>(null);
 
@@ -31,14 +32,35 @@ const Home: React.FC<HomeProps> = ({ player, setPlayer }) => {
         if (!res.ok) throw new Error('Failed to fetch games');
         return res.json();
       })
-      .then(data => {
+      .then(async (data: any[]) => {
         setRecentGames(data);
+        // Fetch opponent names for all games
+        const opponentIds = Array.from(new Set(data.map((game: any) =>
+          player && game.first_player === player.id ? game.second_player : game.first_player
+        )));
+        const names: Record<string, string> = {};
+        await Promise.all(opponentIds.map(async (id: string) => {
+          if (!id || playerNames[id]) return;
+          try {
+            const res = await fetch(`/api/player/${id}`);
+            if (res.ok) {
+              const p = await res.json();
+              names[id] = p.name || id;
+            } else {
+              names[id] = id;
+            }
+          } catch {
+            names[id] = id;
+          }
+        }));
+        setPlayerNames(prev => ({ ...prev, ...names }));
         setGamesLoading(false);
       })
       .catch(() => {
         setGamesError('Could not load recent games.');
         setGamesLoading(false);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player]);
 
   const startEditingName = () => {
@@ -133,18 +155,28 @@ const Home: React.FC<HomeProps> = ({ player, setPlayer }) => {
                 <span style={{ color: '#818384', fontSize: '0.9rem', fontWeight: 500, minWidth: 80, textAlign: 'right' }}>Date</span>
               </div>
               {recentGames.map(game => {
-                // Determine opponent name
-                const opponent = player && game.first_player === player.id ? game.second_player : game.first_player;
+                // Determine opponent id and name
+                const opponentId = player && game.first_player === player.id ? game.second_player : game.first_player;
+                const opponentName = playerNames[opponentId] || opponentId;
                 // Format date
                 const date = new Date(game.created_at).toLocaleDateString();
-                // Result (placeholder logic)
+                // Result logic
                 let result = 'In Progress';
-                if (game.result === player?.id) result = 'Won';
-                else if (game.result && game.result !== '') result = 'Lost';
+                if (game.result === 'draw') {
+                  result = 'Draw';
+                } else if (game.result === player?.id) {
+                  result = 'Won';
+                } else if (game.result && game.result.startsWith('lose:')) {
+                  const loserId = game.result.split(':')[1];
+                  if (loserId === player?.id) result = 'Lost';
+                  else result = 'Won';
+                } else if (game.result && game.result !== '') {
+                  result = 'Lost';
+                }
                 return (
-                  <a
+                  <Link
                     key={game.id}
-                    href={`#/game/${game.id}`}
+                    to={`/game/${game.id}`}
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
@@ -159,7 +191,7 @@ const Home: React.FC<HomeProps> = ({ player, setPlayer }) => {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1, minWidth: 0 }}>
-                      <span style={{ fontWeight: 'bold', minWidth: 100, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opponent}</span>
+                      <span style={{ fontWeight: 'bold', minWidth: 100, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{opponentName}</span>
                       <span style={{
                         padding: '0.25rem 0.5rem',
                         borderRadius: 4,
@@ -169,12 +201,16 @@ const Home: React.FC<HomeProps> = ({ player, setPlayer }) => {
                         display: 'inline-block',
                         margin: '0 4rem',
                         whiteSpace: 'nowrap',
-                        color: result === 'Won' ? '#538d4e' : result === 'Lost' ? '#ff4d4d' : '#b59f3b',
+                        color:
+                          result === 'Won' ? '#538d4e'
+                          : result === 'Lost' ? '#ff4d4d'
+                          : result === 'Draw' ? '#b0b0b0'
+                          : '#b59f3b', // In Progress (gold)
                         fontWeight: 'bold',
                       }}>{result}</span>
                     </div>
                     <div style={{ color: '#818384', fontSize: '0.9rem', minWidth: 80, textAlign: 'right', whiteSpace: 'nowrap' }}>{date}</div>
-                  </a>
+                  </Link>
                 );
               })}
             </div>

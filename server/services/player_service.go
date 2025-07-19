@@ -145,4 +145,9 @@ func (s *PlayerService) Login(ctx context.Context, name string, password string)
 	return player, &token, nil
 }
 
+// SearchByName returns players whose names contain the substring (case-insensitive)
+func (s *PlayerService) SearchByName(ctx context.Context, name string) ([]*models.Player, error) {
+	return s.repo.SearchByName(ctx, name)
+}
+
 func ptr[T any](v T) *T { return &v }

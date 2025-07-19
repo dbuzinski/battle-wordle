@@ -61,22 +61,25 @@ func main() {
 	gameService := services.NewGameService(gameRepository, wordList)
 	playerService := services.NewPlayerService(playerRepository)
 	statsService := services.NewStatsService(gameRepository, playerRepository)
+	matchmakingService := services.NewMatchmakingService(gameService)
 
 	gameController := controllers.NewGameController(gameService)
 	playerController := controllers.NewPlayerController(playerService)
 	statsController := controllers.NewStatsController(statsService)
-	wsController := controllers.NewWSController(gameService)
+	wsController := controllers.NewWSController(gameService, playerService, matchmakingService)
 
 	// Set up routes
 	r := mux.NewRouter()
 
 	r.HandleFunc("/api/player/register", playerController.Register)
 	r.HandleFunc("/api/player/login", playerController.Login)
+	r.HandleFunc("/api/player/search", playerController.SearchPlayers)
 	r.HandleFunc("/api/player/{id}", playerController.GetPlayerById)
 	r.HandleFunc("/api/player/{id}/games", gameController.GetGamesByPlayer)
 	r.HandleFunc("/api/stats/h2h/{first_player}/{second_player}", statsController.GetHeadToHeadStats)
 	r.HandleFunc("/ws/game/{id}", wsController.HandleWebSocket)
 	r.HandleFunc("/ws/matchmaking", wsController.HandleMatchmakingWebSocket)
+	r.HandleFunc("/ws/notifications", wsController.HandleNotificationsWebSocket)
 
 	// Middleware
 	// Define allowed CORS options
